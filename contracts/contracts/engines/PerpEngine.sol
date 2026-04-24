@@ -33,7 +33,7 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
     uint64 private constant BPS_DIVISOR = 10_000;
 
     event PositionOpened(uint256 indexed positionId, address indexed owner, uint8 marketId);
-    event LiquidationRequested(uint256 indexed requestId, uint256 indexed positionId, address indexed keeper);
+    event LiquidationRequested(uint256 indexed requestId, uint256 indexed positionId, address indexed keeper, bytes32 underwaterHandle);
     event Liquidated(uint256 indexed positionId, address indexed keeper);
     event LiquidationChecked(uint256 indexed positionId);
     event PositionClosed(uint256 indexed positionId, address indexed owner);
@@ -170,6 +170,110 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         FHE.allowTransient(ePrice, address(vault));
         FHE.allowTransient(finalCollateral, address(vault));
         positionId = vault.writePosition(user, finalSize, ePrice, finalCollateral, isLong, marketId);
+    }
+
+    // ─── Liquidation (asynchronous 2-phase) ────────────────────────────
+
+    /// @notice Bot-callable. Evaluates margin health on ciphertexts; marks
+    ///         the `underwater` ebool as publicly decryptable so off-chain
+    ///         relayer can decrypt + call back `_onLiquidationDecided`.
+    /// @dev In this version of @fhevm/solidity (0.11.1), FHE.requestDecryption
+    ///      does not exist. The async-decrypt pattern is:
+    ///        1. FHE.makePubliclyDecryptable(underwater) — marks handle
+    ///        2. Emit event with the handle + requestId
+    ///        3. Off-chain relayer decrypts, constructs KMS proof, calls back
+    ///      `requestId` is derived from keccak256(positionId, block.number,
+    ///      block.timestamp) to be unique and unpredictable.
+    function requestLiquidation(uint256 positionId) external whenNotPaused returns (uint256 requestId) {
+        NoirVault.Position memory p = vault.allowPositionAccess(positionId);
+        if (!p.active) revert PositionNotActive();
+
+        (uint64 price, bool fresh) = oracle.getPrice(p.marketId);
+        if (!fresh) revert OraclePriceStale();
+        euint64 ePrice = FHE.asEuint64(price);
+
+        // Compute unrealized loss via pnlLong / pnlShort
+        (, euint64 loss) = p.isLong
+            ? MarginMath.pnlLong(p.size, p.entryPrice, ePrice)
+            : MarginMath.pnlShort(p.size, p.entryPrice, ePrice);
+
+        // Liquidation condition: loss × BPS_DIVISOR >= collateral × MAINT_BPS
+        ebool underwater = MarginMath.shouldLiquidate(
+            p.collateral,
+            loss,
+            MAINTENANCE_MARGIN_BPS
+        );
+
+        // Mark the ebool as publicly decryptable so Gateway can decrypt it
+        FHE.makePubliclyDecryptable(underwater);
+        bytes32 underwaterHandle = FHE.toBytes32(underwater);
+
+        // Generate a unique requestId for this liquidation attempt
+        requestId = uint256(keccak256(abi.encodePacked(positionId, block.number, block.timestamp)));
+
+        // Enqueue pending entry (contextId = positionId, caller = keeper)
+        _enqueue(requestId, msg.sender, positionId, "");
+
+        emit LiquidationRequested(requestId, positionId, msg.sender, underwaterHandle);
+    }
+
+    /// @notice Gateway/relayer callback. Anyone may call once they have the
+    ///         KMS-signed decryption proof for the `underwater` ebool.
+    ///         MUST call FHE.checkSignatures first, then _dequeue (replay
+    ///         guard) BEFORE any external call (CLAUDE.md rule #6).
+    /// @param requestId   The requestId from the LiquidationRequested event.
+    /// @param handlesList The list of handles that were decrypted (single ebool).
+    /// @param cleartexts  ABI-encoded cleartext (uint256: 0=false, 1=true).
+    /// @param decryptionProof KMS signatures proof.
+    function _onLiquidationDecided(
+        uint256 requestId,
+        bytes32[] memory handlesList,
+        bytes memory cleartexts,
+        bytes memory decryptionProof
+    ) external {
+        // 1. Verify KMS signatures first (reverts if invalid)
+        FHE.checkSignatures(handlesList, cleartexts, decryptionProof);
+
+        // 2. Dequeue BEFORE any external call — replay guard
+        PendingDecrypt memory ctx = _dequeue(requestId);
+
+        // 3. Decode cleartext (encoded as uint256; non-zero = true)
+        uint256 clearUint = abi.decode(cleartexts, (uint256));
+        bool shouldLiq = clearUint != 0;
+
+        uint256 positionId = ctx.contextId;
+        address keeperAddr = ctx.caller;
+
+        if (!shouldLiq) {
+            emit LiquidationChecked(positionId);
+            return;
+        }
+
+        // 4. Re-read position (may have been closed between request + callback)
+        NoirVault.Position memory p = vault.allowPositionAccess(positionId);
+        if (!p.active) {
+            emit LiquidationChecked(positionId);
+            return;
+        }
+
+        // 5. Compute keeper fee and forfeit.
+        //    keeperFee = collateral * LIQUIDATOR_FEE_BPS / BPS_DIVISOR
+        //    FHE.div(euint64, uint64) is scalar division (715k HCU) — supported per
+        //    fhe-primitives.md §3. FHESafeMath.safeMul used for the multiply step.
+        euint64 feeNumerator = FHESafeMath.safeMul(p.collateral, FHE.asEuint64(LIQUIDATOR_FEE_BPS));
+        euint64 keeperFee = FHE.div(feeNumerator, BPS_DIVISOR);
+        euint64 forfeit = FHESafeMath.safeSub(p.collateral, keeperFee);
+
+        // 6. Credit keeper and pool balances
+        FHE.allowTransient(keeperFee, address(vault));
+        vault.adjustBalance(keeperAddr, keeperFee, true);
+        FHE.allowTransient(forfeit, address(vault));
+        vault.adjustBalance(liquidationPool, forfeit, true);
+
+        // 7. Mark position closed
+        vault.closePosition(positionId);
+
+        emit Liquidated(positionId, keeperAddr);
     }
 
     // ─── Close position (synchronous) ──────────────────────────────────

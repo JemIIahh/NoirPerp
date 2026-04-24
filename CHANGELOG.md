@@ -507,3 +507,31 @@ retroactive review. Going forward every phase must pass Tier 1 before tick.
   losing, max-loss-saturation, flat, ownership, double-close, stale oracle).
   **Files**: `contracts/contracts/engines/PerpEngine.sol`,
   `contracts/test/PerpEngine.Close.test.ts`.
+
+- **Added**: `PerpEngine.requestLiquidation(positionId)` +
+  `_onLiquidationDecided(reqId, handlesList, cleartexts, proof)` callback.
+  Two-phase async state machine: (1) compute `shouldLiquidate` ebool on
+  ciphertexts via `MarginMath.shouldLiquidate`, call
+  `FHE.makePubliclyDecryptable(underwater)`, store handle + keeper in
+  DecryptQueue; (2) callback verifies KMS signatures, dequeues (replay
+  guard), conditionally liquidates. On liquidation: keeper fee (50bps
+  via `FHE.div(safeMul(coll, feeBps), BPS_DIVISOR)`) credited to caller,
+  remainder forfeited to `liquidationPool`. Position marked closed.
+  **Deviations from plan**:
+  - `FHE.requestDecryption` does NOT exist in @fhevm/solidity@0.11.1.
+    Used `FHE.makePubliclyDecryptable(underwater)` instead; relayer reads
+    the handle and calls back manually with KMS-signed proof.
+  - `FHE.checkSignatures` takes `(bytes32[] handlesList, bytes cleartexts,
+    bytes proof)` NOT `(uint256 requestId, bytes cleartexts, bytes proof)`.
+    fhe-primitives.md §4 had the wrong signature — corrected in implementation.
+  - `hre.fhevm.awaitDecryptionOracle()` does not exist. Tests use
+    `hre.fhevm.publicDecrypt([handle])` to get `abiEncodedClearValues` +
+    `decryptionProof`, then call `_onLiquidationDecided` manually.
+  - `LiquidationRequested` event includes `underwaterHandle` (bytes32) so
+    off-chain relayers know which handle to decrypt.
+  - Cleartext encoding: `uint256` ABI decode used in callback (KMS encodes
+    ebool as uint256 0/1), not `bool`.
+  4 unit tests: underwater→liquidate (fee=7, pool=1493), healthy→no-op,
+  already-closed guard, stale oracle guard.
+  **Files**: `contracts/contracts/engines/PerpEngine.sol`,
+  `contracts/test/PerpEngine.Liquidation.test.ts`.
