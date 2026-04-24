@@ -222,11 +222,14 @@ the phase-complete tick. Their findings, all addressed in one commit:
   **Files**: `contracts/contracts/lib/TickMath.sol`,
   `contracts/contracts/test-harness/TickMathHarness.sol`,
   `contracts/test/TickMath.test.ts`.
-  **Known issue (plan bug)**: the plan's symmetry test uses `1n << 16n`
+  **Fix (plan bug resolved)**: the plan's symmetry test used `1n << 16n`
   as absolute tolerance for `sqrtPrice(-tick) * sqrtPrice(+tick) ≈ 2^192`.
-  At tick ±1000 the values are ~96-bit numbers; their product's rounding
-  drift is ~95 bits in absolute terms (3e-30 relative), so the test fails.
-  The contract is correct (verified by all other 12 tests plus UniV3
-  verbatim port). The tolerance constant in the test must be raised to
-  `1n << 96n` to match mathematical reality. Blocked pending plan
-  clarification — contract code and all 12 other tests are committed.
+  At tick ±1000 each `sqrtPrice` is ~2^96, so the product's ULP rounding
+  drift propagates to ~2^95 absolute (relative error ~3e-30). The
+  `2^16` bound was mathematically impossible. Corrected to `1n << 112n`
+  which corresponds to relative precision better than 2^-80 — still a
+  rigorous symmetry guarantee, just at the correct scale. Contract code
+  unchanged (it's a verbatim UniV3 port and all 12 other tests verify
+  correctness). All 13 TickMath tests now pass.
+  **Root cause**: plan author confused absolute vs relative tolerance
+  when writing the test.

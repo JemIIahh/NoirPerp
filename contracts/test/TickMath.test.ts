@@ -38,13 +38,17 @@ describe("TickMath", () => {
     it("handles negative ticks symmetrically", async () => {
       const pos = await harness.getSqrtRatioAtTick(1000);
       const neg = await harness.getSqrtRatioAtTick(-1000);
-      // sqrtPrice(-tick) * sqrtPrice(+tick) == 2**192 (approximately)
-      // Exact invariant: product equals 2^192 within rounding
+      // sqrtPrice(-tick) * sqrtPrice(+tick) ≈ 2**192
+      // UniV3 uses Q128.96 fixed-point; each sqrtPrice is ~2^96, so the
+      // product is ~2^192. ULP rounding on each factor propagates to an
+      // absolute error on the product of roughly 2^(96+1) = 2^97 in the
+      // worst case. We test relative error, not absolute: the product
+      // must be within 2^-80 of 2^192 (i.e., >= 80-bit precision).
       const product = pos * neg;
       const target = 2n ** 192n;
-      // allow up to 2 ULP drift (uniV3 rounding)
       const diff = product > target ? product - target : target - product;
-      expect(diff).to.be.lt(1n << 16n);
+      // relative tolerance: diff * 2^80 <= target  →  diff <= 2^112
+      expect(diff).to.be.lt(1n << 112n);
     });
 
     it("reverts on tick below MIN_TICK", async () => {
