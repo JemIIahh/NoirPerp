@@ -29,7 +29,7 @@ contract NoirVault is ZamaEthereumConfig {
     event Unpaused();
     event Deposited(address indexed user, uint64 amount);
     event Withdrawn(address indexed user, uint64 amount);
-    event BalanceAdjusted(address indexed user, uint64 amount, bool isCredit, address indexed engine);
+    event BalanceAdjusted(address indexed user, bool isCredit, address indexed engine);
 
     error NotAdmin();
     error NotAuthorizedEngine();
@@ -119,6 +119,18 @@ contract NoirVault is ZamaEthereumConfig {
 
     /// @notice Withdraws `amount` of USDCx to the caller, debiting
     ///         their internal balance (saturating at 0).
+    /// @dev ERC-7984 silent-zero footgun (OZ FHEVM Security Guide #4):
+    ///      if the vault's *actual* cUSDC token balance is less than
+    ///      `effective` (e.g., from a prior accounting bug), the token
+    ///      transfer silently clamps to 0 while the internal balance has
+    ///      already been decremented. This contract relies on the invariant
+    ///      that `sum(_balances) == cUSDC balanceOf(vault)`, which is
+    ///      maintained as long as all vault inflows/outflows go through
+    ///      deposit/withdraw/adjustBalance. Direct token transfers TO the
+    ///      vault are counted as attacker gifts (not credited to any user);
+    ///      direct transfers FROM the vault are impossible (no `approve`
+    ///      outflow paths). The invariant is enforced by Phase 9 Foundry
+    ///      invariant tests.
     function withdraw(uint64 amount) external whenNotPaused {
         euint64 amt = FHE.asEuint64(amount);
         euint64 current = _balances[msg.sender];
@@ -141,17 +153,22 @@ contract NoirVault is ZamaEthereumConfig {
     /// @notice Adjusts a user's encrypted balance. Only authorized engines.
     ///         Used by PerpEngine to debit collateral at position open and
     ///         credit payout at position close.
+    /// @dev Delta is a ciphertext — engines MUST pass the result of an FHE
+    ///      computation (e.g., effectiveCollateral from a select-guarded
+    ///      margin check). Plaintext amounts leak to calldata and defeat
+    ///      the privacy model. Callers must have granted the vault
+    ///      allowTransient on `delta` before calling.
     /// @param user Target user.
-    /// @param amount Plaintext amount (trivial-encrypted internally; amounts
-    ///        here are engine-known since they're oracle-derived).
-    /// @param isCredit true to credit (add), false to debit (subtract,
+    /// @param delta Encrypted amount to apply.
+    /// @param isCredit true to credit (safeAdd), false to debit (safeSub,
     ///        saturating at 0).
-    function adjustBalance(address user, uint64 amount, bool isCredit)
+    function adjustBalance(address user, euint64 delta, bool isCredit)
         external
         onlyAuthorizedEngine
         whenNotPaused
     {
-        euint64 delta = FHE.asEuint64(amount);
+        // Inference-attack guard: engine must legitimately hold ACL on delta.
+        require(FHE.isSenderAllowed(delta), "NoirVault: delta not allowed");
         euint64 current = _balances[user];
         euint64 newBal = isCredit
             ? FHESafeMath.safeAdd(current, delta)
@@ -159,7 +176,7 @@ contract NoirVault is ZamaEthereumConfig {
         _balances[user] = newBal;
         FHE.allowThis(newBal);
         FHE.allow(newBal, user);
-        emit BalanceAdjusted(user, amount, isCredit, msg.sender);
+        emit BalanceAdjusted(user, isCredit, msg.sender);
     }
 
     /// @notice Returns the ciphertext handle for a user's balance. Caller
@@ -170,6 +187,11 @@ contract NoirVault is ZamaEthereumConfig {
     }
 
     // ─── Positions ─────────────────────────────────────────────────────
+    // NOTE: `orders` mapping (Darkpool / Limit engines) is DEFERRED to
+    //       Phase 5 & 6; `lpPositions` mapping (AMM engine) is DEFERRED
+    //       to Phase 4. `grantTransient(engine, ct[])` helper is DEFERRED
+    //       to Phase 3 (PerpEngine first needs it for reading stored
+    //       position ciphertexts during margin checks).
 
     struct Position {
         euint64 size;
@@ -188,6 +210,10 @@ contract NoirVault is ZamaEthereumConfig {
     event PositionClosed(uint256 indexed positionId);
 
     /// @notice Engine-only. Stores a new Position and grants ACL to owner.
+    /// @dev Engines MUST grant vault allowTransient on each ciphertext input
+    ///      before calling (see MockEngine for the pattern). All three
+    ///      ciphertext inputs are guarded with FHE.isSenderAllowed per
+    ///      CLAUDE.md rule #4 (inference-attack prevention).
     /// @return positionId The new position's id.
     function writePosition(
         address owner,
@@ -197,6 +223,11 @@ contract NoirVault is ZamaEthereumConfig {
         bool isLong,
         uint8 marketId
     ) external onlyAuthorizedEngine whenNotPaused returns (uint256 positionId) {
+        // Inference-attack guards: engine must legitimately hold ACL on each input.
+        require(FHE.isSenderAllowed(size), "NoirVault: size not allowed");
+        require(FHE.isSenderAllowed(entryPrice), "NoirVault: entryPrice not allowed");
+        require(FHE.isSenderAllowed(collateral), "NoirVault: collateral not allowed");
+
         positionId = nextPositionId++;
 
         // Vault needs persistent ACL on each ciphertext to read later.

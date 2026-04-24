@@ -37,4 +37,13 @@ contract MockEngine is ZamaEthereumConfig {
     function closeMockPosition(uint256 positionId) external {
         vault.closePosition(positionId);
     }
+
+    /// @notice Trivially encrypts `amount` and calls vault.adjustBalance.
+    ///         Test helper so existing balance tests can exercise the
+    ///         new euint64-delta signature with plaintext-style setup.
+    function adjustMockBalance(address user, uint64 amount, bool isCredit) external {
+        euint64 delta = FHE.asEuint64(amount);
+        FHE.allowTransient(delta, address(vault));
+        vault.adjustBalance(user, delta, isCredit);
+    }
 }

@@ -101,4 +101,44 @@ describe("FHESafeMath", () => {
       expect(await decryptLast()).to.equal(MAX_U64);
     });
   });
+
+  describe("safeMul", () => {
+    const THRESHOLD = 1n << 32n;
+
+    it("returns a * b when both fit in 2^32", async () => {
+      await (await harness.runSafeMul(1000n, 2000n)).wait();
+      expect(await decryptLast()).to.equal(2_000_000n);
+    });
+
+    it("returns 0 when a is 0", async () => {
+      await (await harness.runSafeMul(0n, 12345n)).wait();
+      expect(await decryptLast()).to.equal(0n);
+    });
+
+    it("returns 0 when b is 0", async () => {
+      await (await harness.runSafeMul(12345n, 0n)).wait();
+      expect(await decryptLast()).to.equal(0n);
+    });
+
+    it("saturates at MAX_U64 when a >= 2^32", async () => {
+      await (await harness.runSafeMul(THRESHOLD, 1n)).wait();
+      expect(await decryptLast()).to.equal(MAX_U64);
+    });
+
+    it("saturates at MAX_U64 when b >= 2^32", async () => {
+      await (await harness.runSafeMul(1n, THRESHOLD)).wait();
+      expect(await decryptLast()).to.equal(MAX_U64);
+    });
+
+    it("allows max safe product: (2^32 - 1) * (2^32 - 1)", async () => {
+      const maxFit = THRESHOLD - 1n;
+      await (await harness.runSafeMul(maxFit, maxFit)).wait();
+      expect(await decryptLast()).to.equal(maxFit * maxFit);
+    });
+
+    it("saturates on clearly overflowing inputs (both large)", async () => {
+      await (await harness.runSafeMul(MAX_U64, MAX_U64)).wait();
+      expect(await decryptLast()).to.equal(MAX_U64);
+    });
+  });
 });

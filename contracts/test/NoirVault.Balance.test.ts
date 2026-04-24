@@ -1,13 +1,13 @@
 import { expect } from "chai";
 import * as hre from "hardhat";
 import { FhevmType } from "@fhevm/hardhat-plugin";
-import type { NoirVault, MockERC7984 } from "../typechain-types";
+import type { NoirVault, MockERC7984, MockEngine } from "../typechain-types";
 
 describe("NoirVault — balance operations", () => {
   let vault: NoirVault;
   let token: MockERC7984;
+  let mockEngine: MockEngine;
   let admin: Awaited<ReturnType<typeof hre.ethers.getSigners>>[number];
-  let engine: Awaited<ReturnType<typeof hre.ethers.getSigners>>[number];
   let alice: Awaited<ReturnType<typeof hre.ethers.getSigners>>[number];
   let bob: Awaited<ReturnType<typeof hre.ethers.getSigners>>[number];
 
@@ -21,7 +21,7 @@ describe("NoirVault — balance operations", () => {
   }
 
   beforeEach(async () => {
-    [admin, engine, alice, bob] = await hre.ethers.getSigners();
+    [admin, alice, bob] = await hre.ethers.getSigners();
 
     // Deploy MockERC7984
     const TokenFactory = await hre.ethers.getContractFactory("MockERC7984");
@@ -37,8 +37,12 @@ describe("NoirVault — balance operations", () => {
     vault = (await VaultFactory.deploy(admin.address, await token.getAddress())) as unknown as NoirVault;
     await vault.waitForDeployment();
 
-    // Register engine for adjustBalance tests
-    await (await vault.registerEngine(engine.address)).wait();
+    // Deploy MockEngine and register it as an authorized engine (contract,
+    // not EOA — adjustBalance now takes euint64 delta and requires FHE ACL).
+    const EngineFactory = await hre.ethers.getContractFactory("MockEngine");
+    mockEngine = (await EngineFactory.deploy(await vault.getAddress())) as unknown as MockEngine;
+    await mockEngine.waitForDeployment();
+    await (await vault.registerEngine(await mockEngine.getAddress())).wait();
   });
 
   describe("deposit", () => {
@@ -105,33 +109,35 @@ describe("NoirVault — balance operations", () => {
     });
 
     it("engine can credit a user's balance", async () => {
-      await (await vault.connect(engine).adjustBalance(alice.address, 500n, true)).wait();
+      await (await mockEngine.adjustMockBalance(alice.address, 500n, true)).wait();
       const handle = await vault.getBalance(alice.address);
       expect(await decrypt(handle, alice)).to.equal(1500n);
     });
 
     it("engine can debit a user's balance", async () => {
-      await (await vault.connect(engine).adjustBalance(alice.address, 300n, false)).wait();
+      await (await mockEngine.adjustMockBalance(alice.address, 300n, false)).wait();
       const handle = await vault.getBalance(alice.address);
       expect(await decrypt(handle, alice)).to.equal(700n);
     });
 
     it("debit larger than balance saturates at 0 (safe math)", async () => {
-      await (await vault.connect(engine).adjustBalance(alice.address, 5000n, false)).wait();
+      await (await mockEngine.adjustMockBalance(alice.address, 5000n, false)).wait();
       const handle = await vault.getBalance(alice.address);
       expect(await decrypt(handle, alice)).to.equal(0n);
     });
 
-    it("non-engine cannot adjustBalance", async () => {
+    it("non-engine (EOA) cannot adjustBalance", async () => {
+      // Bob is not registered. The onlyAuthorizedEngine modifier fires
+      // BEFORE the isSenderAllowed guard, so any dummy bytes32 is fine.
       await expect(
-        vault.connect(bob).adjustBalance(alice.address, 100n, true)
+        vault.connect(bob).adjustBalance(alice.address, hre.ethers.ZeroHash, true)
       ).to.be.revertedWithCustomError(vault, "NotAuthorizedEngine");
     });
 
     it("reverts when paused", async () => {
       await (await vault.pause()).wait();
       await expect(
-        vault.connect(engine).adjustBalance(alice.address, 100n, true)
+        mockEngine.adjustMockBalance(alice.address, 100n, true)
       ).to.be.revertedWithCustomError(vault, "VaultPaused");
     });
   });

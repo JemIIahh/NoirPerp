@@ -7,14 +7,16 @@ import { FHESafeMath } from "./FHESafeMath.sol";
 /// @title MarginMath
 /// @notice Multiplication-only margin / PnL / liquidation math on euint64.
 ///         Avoids FHE.div(ct, ct) which does not exist; all ratio checks
-///         reformulated as multiplications.
+///         reformulated as multiplications. Every `FHE.mul` is routed
+///         through `FHESafeMath.safeMul` to saturate at MAX_UINT64 on
+///         overflow (silent-wrap protection).
 /// @dev Basis points: 10_000 = 100%. Maintenance margin typically 500 bps (5%).
 library MarginMath {
     uint64 internal constant BPS_DIVISOR = 10_000;
 
-    /// @notice notional = size × price.
+    /// @notice notional = size × price (saturating).
     function notional(euint64 size, euint64 price) internal returns (euint64) {
-        return FHE.mul(size, price);
+        return FHESafeMath.safeMul(size, price);
     }
 
     /// @notice true iff collateral × maxLeverage >= notionalValue.
@@ -25,7 +27,7 @@ library MarginMath {
         euint64 notionalValue,
         uint64 maxLeverage
     ) internal returns (ebool) {
-        euint64 capacity = FHE.mul(collateral, maxLeverage);
+        euint64 capacity = FHESafeMath.safeMul(collateral, FHE.asEuint64(maxLeverage));
         return FHE.ge(capacity, notionalValue);
     }
 
@@ -42,8 +44,8 @@ library MarginMath {
         euint64 up = FHESafeMath.safeSub(currentPrice, entryPrice);
         euint64 down = FHESafeMath.safeSub(entryPrice, currentPrice);
         euint64 zero = FHE.asEuint64(0);
-        profit = FHE.select(isProfit, FHE.mul(size, up), zero);
-        loss = FHE.select(isProfit, zero, FHE.mul(size, down));
+        profit = FHE.select(isProfit, FHESafeMath.safeMul(size, up), zero);
+        loss = FHE.select(isProfit, zero, FHESafeMath.safeMul(size, down));
     }
 
     /// @notice Returns (profit, loss) for a short position. Mirror of pnlLong.
@@ -56,19 +58,22 @@ library MarginMath {
         euint64 down = FHESafeMath.safeSub(entryPrice, currentPrice);
         euint64 up = FHESafeMath.safeSub(currentPrice, entryPrice);
         euint64 zero = FHE.asEuint64(0);
-        profit = FHE.select(isProfit, FHE.mul(size, down), zero);
-        loss = FHE.select(isProfit, zero, FHE.mul(size, up));
+        profit = FHE.select(isProfit, FHESafeMath.safeMul(size, down), zero);
+        loss = FHE.select(isProfit, zero, FHESafeMath.safeMul(size, up));
     }
 
     /// @notice true iff unrealizedLoss / collateral >= maintenanceMarginBps / 10000,
     ///         reformulated as (loss × BPS) >= (collateral × maintBps) to avoid division.
+    ///         Both multiplications are saturating (safeMul) — overflow on a deeply
+    ///         insolvent position would otherwise wrap `lossScaled` to a small value
+    ///         and mask liquidation, a correctness bug.
     function shouldLiquidate(
         euint64 collateral,
         euint64 unrealizedLoss,
         uint64 maintenanceMarginBps
     ) internal returns (ebool) {
-        euint64 lossScaled = FHE.mul(unrealizedLoss, BPS_DIVISOR);
-        euint64 threshold = FHE.mul(collateral, maintenanceMarginBps);
+        euint64 lossScaled = FHESafeMath.safeMul(unrealizedLoss, FHE.asEuint64(BPS_DIVISOR));
+        euint64 threshold = FHESafeMath.safeMul(collateral, FHE.asEuint64(maintenanceMarginBps));
         return FHE.ge(lossScaled, threshold);
     }
 }

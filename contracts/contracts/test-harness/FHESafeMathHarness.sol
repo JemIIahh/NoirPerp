@@ -39,4 +39,13 @@ contract FHESafeMathHarness is ZamaEthereumConfig {
         FHE.allowThis(result);
         FHE.allow(result, msg.sender);
     }
+
+    function runSafeMul(uint64 a, uint64 b) external {
+        euint64 ea = FHE.asEuint64(a);
+        euint64 eb = FHE.asEuint64(b);
+        euint64 result = FHESafeMath.safeMul(ea, eb);
+        lastResult = result;
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+    }
 }
