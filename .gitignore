@@ -1,0 +1,51 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# Build
+dist/
+build/
+out/
+artifacts/
+cache/
+typechain/
+typechain-types/
+.fhevm/
+
+# Hardhat
+coverage/
+coverage.json
+.coverage_contracts/
+.coverage_cache/
+
+# Env + secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend
+frontend/dist/
+frontend/.vite/
+
+# Logs
+*.log
+logs/
+
+# Foundry (future)
+out/
+cache_forge/
+broadcast/
