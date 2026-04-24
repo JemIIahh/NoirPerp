@@ -318,3 +318,15 @@ the phase-complete tick. Their findings, all addressed in one commit:
     changed to remove the leading `@` (Solidity's docstring parser
     interpreted it as an unknown NatSpec tag and threw `DocstringParsingError`).
     This is a doc-comment-only change; no logic was altered.
+
+### Phase 2 — Vault + services (in progress)
+
+- **Added**: `contracts/contracts/services/Compliance.sol` — Merkle-tree
+  KYC allowlist. Admin-controlled root + per-address revocation.
+  Uses OZ `MerkleProof` with StandardMerkleTree leaf format
+  (double-hashed). 14 unit tests covering verify, updateRoot, revoke,
+  transferAdmin.
+  **Files**: `contracts/contracts/services/Compliance.sol`,
+  `contracts/test/Compliance.test.ts`.
+- **Added**: `@openzeppelin/merkle-tree` dev dependency for JS-side
+  Merkle tree construction in tests.
