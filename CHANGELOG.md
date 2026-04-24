@@ -233,3 +233,14 @@ the phase-complete tick. Their findings, all addressed in one commit:
   correctness). All 13 TickMath tests now pass.
   **Root cause**: plan author confused absolute vs relative tolerance
   when writing the test.
+
+- **Added**: `contracts/contracts/lib/DecryptQueue.sol` — abstract
+  contract that every engine calling `FHE.requestDecryption` inherits.
+  Tracks pending requests with replay-guarded `_dequeue` (deletes
+  entry before returning, preventing double-fulfill attacks). Stale
+  entries past 10-minute timeout can be swept by anyone via
+  `cleanupStale`. 13 unit tests: enqueue/pendingInfo, dequeue replay
+  guard, cleanup-stale semantics + auth.
+  **Files**: `contracts/contracts/lib/DecryptQueue.sol`,
+  `contracts/contracts/test-harness/DecryptQueueConsumer.sol`,
+  `contracts/test/DecryptQueue.test.ts`.
