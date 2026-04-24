@@ -535,3 +535,8 @@ retroactive review. Going forward every phase must pass Tier 1 before tick.
   already-closed guard, stale oracle guard.
   **Files**: `contracts/contracts/engines/PerpEngine.sol`,
   `contracts/test/PerpEngine.Liquidation.test.ts`.
+
+- **Added**: `test/PerpEngine.MultiMarket.test.ts` — open+close cycle
+  for all 3 markets (BTC=1, ETH=2, SOL=3) verifying marketId dispatch
+  + oracle routing. 3 tests.
+  **Files**: `contracts/test/PerpEngine.MultiMarket.test.ts`.
