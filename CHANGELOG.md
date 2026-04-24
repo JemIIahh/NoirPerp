@@ -244,3 +244,18 @@ the phase-complete tick. Their findings, all addressed in one commit:
   **Files**: `contracts/contracts/lib/DecryptQueue.sol`,
   `contracts/contracts/test-harness/DecryptQueueConsumer.sol`,
   `contracts/test/DecryptQueue.test.ts`.
+
+- **Added**: `contracts/contracts/lib/MarginMath.sol` —
+  multiplication-only margin / PnL / liquidation math. No `FHE.div`
+  (ciphertext ÷ ciphertext does not exist); all ratio checks
+  reformulated as multiplications. Depends on `FHESafeMath`.
+  Functions: `notional`, `marginOK`, `pnlLong`, `pnlShort`,
+  `shouldLiquidate`. 16 unit tests covering happy paths, boundaries,
+  and zero-price-change edge cases.
+  **Note**: `userDecryptEbool` IS available on
+  `@fhevm/hardhat-plugin@0.4.2` as a first-class method
+  (`hre.fhevm.userDecryptEbool(handle, contractAddress, signer)`).
+  No fallback was needed; used directly as in the plan's primary path.
+  **Files**: `contracts/contracts/lib/MarginMath.sol`,
+  `contracts/contracts/test-harness/MarginMathHarness.sol`,
+  `contracts/test/MarginMath.test.ts`.
