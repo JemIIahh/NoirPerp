@@ -11,7 +11,7 @@ async function main() {
   const signers = await hre.ethers.getSigners();
   const [admin, relayerA, relayerB, relayerC] = signers;
 
-  console.log("=== NoirPerp Phase 2 local deploy ===");
+  console.log("=== NoirPerp Phase 3 local deploy ===");
   console.log("Admin:   ", admin.address);
   console.log("Relayers:", relayerA.address, relayerB.address, relayerC.address);
   console.log("");

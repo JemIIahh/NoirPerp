@@ -32,16 +32,19 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
     uint64 public constant LIQUIDATOR_FEE_BPS = 50;        // 0.5%
     uint64 private constant BPS_DIVISOR = 10_000;
 
-    event PositionOpened(uint256 indexed positionId, address indexed owner, uint8 marketId);
+    // Note: `PositionOpened` and `PositionClosed` are emitted by NoirVault
+    // (it's the canonical source of position lifecycle events). We intentionally
+    // do NOT duplicate those declarations here — off-chain indexers should
+    // watch the vault address for them.
     event LiquidationRequested(uint256 indexed requestId, uint256 indexed positionId, address indexed keeper, bytes32 underwaterHandle);
     event Liquidated(uint256 indexed positionId, address indexed keeper);
     event LiquidationChecked(uint256 indexed positionId);
-    event PositionClosed(uint256 indexed positionId, address indexed owner);
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
     event LiquidationPoolChanged(address indexed oldPool, address indexed newPool);
 
     error NotAdmin();
     error NotCompliant();
+    error NotAllowed(); // inference-attack guard (replaces string require on isSenderAllowed)
     error OraclePriceStale();
     error InvalidMarket();
     error ZeroAddress();
@@ -121,8 +124,8 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         // Import encrypted inputs (with proofs)
         euint64 size = FHE.fromExternal(eSize, sizeProof);
         euint64 collateral = FHE.fromExternal(eCollateral, collateralProof);
-        require(FHE.isSenderAllowed(size), "PerpEngine: size not allowed");
-        require(FHE.isSenderAllowed(collateral), "PerpEngine: collateral not allowed");
+        if (!FHE.isSenderAllowed(size)) revert NotAllowed();
+        if (!FHE.isSenderAllowed(collateral)) revert NotAllowed();
 
         // Compute select-guarded final ciphertexts
         (euint64 finalSize, euint64 finalCollateral) = _computeFinals(size, collateral, price);
@@ -165,10 +168,12 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         FHE.allowTransient(finalCollateral, address(vault));
         vault.adjustBalance(user, finalCollateral, false);
 
-        // Write the position to vault; grant vault transient ACL on all ciphertext args
+        // Write the position to vault; grant vault transient ACL on finalSize
+        // and ePrice. finalCollateral already has transient ACL from the
+        // adjustBalance call above (same tx — transient permits persist for
+        // the whole tx via EIP-1153). No re-grant needed.
         FHE.allowTransient(finalSize, address(vault));
         FHE.allowTransient(ePrice, address(vault));
-        FHE.allowTransient(finalCollateral, address(vault));
         positionId = vault.writePosition(user, finalSize, ePrice, finalCollateral, isLong, marketId);
     }
 
@@ -230,7 +235,7 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         bytes32[] memory handlesList,
         bytes memory cleartexts,
         bytes memory decryptionProof
-    ) external {
+    ) external whenNotPaused {
         // 1. Verify KMS signatures first (reverts if invalid)
         FHE.checkSignatures(handlesList, cleartexts, decryptionProof);
 
@@ -314,9 +319,7 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         FHE.allowTransient(payout, address(vault));
         vault.adjustBalance(p.owner, payout, true);
 
-        // Mark position closed
+        // Mark position closed (vault emits PositionClosed canonically)
         vault.closePosition(positionId);
-
-        emit PositionClosed(positionId, p.owner);
     }
 }

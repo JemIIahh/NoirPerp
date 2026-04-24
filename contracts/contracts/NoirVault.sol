@@ -33,6 +33,7 @@ contract NoirVault is ZamaEthereumConfig {
 
     error NotAdmin();
     error NotAuthorizedEngine();
+    error NotAllowed(); // inference-attack guard (replaces string require on isSenderAllowed)
     error ZeroAddress();
     error AlreadyPaused();
     error NotPaused();
@@ -168,7 +169,7 @@ contract NoirVault is ZamaEthereumConfig {
         whenNotPaused
     {
         // Inference-attack guard: engine must legitimately hold ACL on delta.
-        require(FHE.isSenderAllowed(delta), "NoirVault: delta not allowed");
+        if (!FHE.isSenderAllowed(delta)) revert NotAllowed();
         euint64 current = _balances[user];
         euint64 newBal = isCredit
             ? FHESafeMath.safeAdd(current, delta)
@@ -241,9 +242,9 @@ contract NoirVault is ZamaEthereumConfig {
         uint8 marketId
     ) external onlyAuthorizedEngine whenNotPaused returns (uint256 positionId) {
         // Inference-attack guards: engine must legitimately hold ACL on each input.
-        require(FHE.isSenderAllowed(size), "NoirVault: size not allowed");
-        require(FHE.isSenderAllowed(entryPrice), "NoirVault: entryPrice not allowed");
-        require(FHE.isSenderAllowed(collateral), "NoirVault: collateral not allowed");
+        if (!FHE.isSenderAllowed(size)) revert NotAllowed();
+        if (!FHE.isSenderAllowed(entryPrice)) revert NotAllowed();
+        if (!FHE.isSenderAllowed(collateral)) revert NotAllowed();
 
         positionId = nextPositionId++;
 
