@@ -71,6 +71,12 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/contracts/engines/AMMEngine.sol`,
   `contracts/test/AMMEngine.Swap.test.ts`.
 
+- **Added**: `contracts/test/Integration.PerpAmmLiq.test.ts` —
+  cross-engine integration test verifying PerpEngine liquidation
+  forfeit lands in AMM's vault balance. Confirms the documented
+  MVP limitation: `totalReserveUsdcx` plaintext counter is NOT
+  incremented (forfeits stranded). Phase 5+ adds resync flow.
+
 ### Phase 0 scaffolding (in progress)
 
 - **Added**: Design spec `docs/specs/2026-04-24-noirperp-design.md` —
