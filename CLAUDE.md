@@ -43,8 +43,9 @@ Ground-up rewrite of ZKPerp (Aleo → FHE). Design spec:
   Not `ConfidentialERC20` (renamed symbol, gone).
 - USDCx on Sepolia: use the pre-deployed `cUSDCMock @ 0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639`.
   Do not deploy your own wrapper.
-- Contracts inherit `SepoliaConfig` from `@fhevm/solidity/config/ZamaConfig.sol`
-  to auto-wire KMS + coprocessor addresses.
+- Contracts inherit `ZamaEthereumConfig` from `@fhevm/solidity/config/ZamaConfig.sol`
+  to auto-wire KMS + coprocessor addresses. (`SepoliaConfig` does NOT
+  exist in v0.11.1 — that was an older API name.)
 
 ## Change management rules
 

@@ -15,7 +15,7 @@ differently from what's written here.
 | `@fhevm/solidity` | `^0.11.1` |
 | `@fhevm/hardhat-plugin` | `^0.4.2` |
 | `@fhevm/mock-utils` | `^0.4.2` |
-| `@zama-fhe/relayer-sdk` | `^0.4.2` |
+| `@zama-fhe/relayer-sdk` | `0.4.1` (EXACT — @fhevm/hardhat-plugin 0.4.2 enforces exact match at startup) |
 | `@openzeppelin/confidential-contracts` | `0.4.0` (pinned, not ^) |
 | `@openzeppelin/contracts` | `^5.2.0` |
 | `hardhat` | `^2.22.0` |
@@ -31,8 +31,11 @@ differently from what's written here.
 | cUSDCMock (USDCx) | `0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639` |
 | cUSDTMock | `0x4E7B06D78965594eB5EF5414c357ca21E1554491` |
 
-Contracts inherit `SepoliaConfig` from
-`@fhevm/solidity/config/ZamaConfig.sol` to auto-wire these.
+Contracts inherit `ZamaEthereumConfig` from
+`@fhevm/solidity/config/ZamaConfig.sol` to auto-wire these. The config
+auto-dispatches by chain ID (Hardhat local 31337, Sepolia 11155111).
+Note: `SepoliaConfig` (older API) does NOT exist in @fhevm/solidity
+v0.11.1 — use `ZamaEthereumConfig`.
 
 ## 3. Supported operations on `euint64`
 
