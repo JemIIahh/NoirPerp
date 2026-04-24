@@ -201,3 +201,14 @@ the phase-complete tick. Their findings, all addressed in one commit:
   in `docs/fhe-primitives.md` (the LIVING DOC). Per CLAUDE.md
   priority, `fhe-primitives.md` overrides the spec for FHE primitive
   details.
+
+### Phase 1 — Shared libs (in progress)
+
+- **Added**: `contracts/contracts/lib/FHESafeMath.sol` — select-guarded
+  `safeSub`, `safeAdd` (saturating), `absDiff` on `euint64`. Prevents
+  silent underflow / overflow wraparound per OZ FHEVM security guide.
+  **Why**: every engine's margin/PnL math runs through this lib; raw
+  `FHE.sub` / `FHE.add` are banned outside of it (per CLAUDE.md rule #3).
+  **Files**: `contracts/contracts/lib/FHESafeMath.sol`,
+  `contracts/contracts/test-harness/FHESafeMathHarness.sol`,
+  `contracts/test/FHESafeMath.test.ts`.
