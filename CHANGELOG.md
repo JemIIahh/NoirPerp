@@ -116,3 +116,24 @@ solved design decisions; give future agents full context.
   (supports v20–v22 LTS). Smoke test passes despite the warning.
   If future phases fail with Node-related issues, downgrading Node
   to v22 LTS is the mitigation.
+
+### Phase 0 complete ✅ (2026-04-24)
+
+- **Scaffolding**: monorepo structure created (contracts/, frontend/,
+  bot/, oracle-relayer/, compliance-backend/, docs/, assets/).
+- **Guardrails (all 4 pillars populated)**:
+  - `CLAUDE.md` — pinned agent rules
+  - `CHANGELOG.md` — this file
+  - `PROGRESS.md` — phase tracker
+  - `docs/fhe-primitives.md` — verified FHEVM primitives reference
+  - `.claude/settings.local.json` — permission allowlist
+- **Contracts workspace**: Hardhat + FHEVM plugin + OZ confidential
+  contracts + TypeScript + typechain installed; `hardhat.config.ts`
+  and `tsconfig.json` written; Solidity 0.8.27 locked.
+- **Toolchain smoke test**: `Smoke.sol` + `Smoke.test.ts` prove
+  `FHE.asEuint64` + storage + ACL + mock decrypt all work
+  end-to-end. `npx hardhat test` → 1 passing.
+- **Why**: Phase 1 (shared libs) cannot start without a working
+  FHEVM toolchain and the guardrail docs in place.
+- **Files**: see individual commits in the `git log`
+  (commit range `86103a6..HEAD` on branch `phase-0-scaffolding`).

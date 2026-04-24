@@ -9,11 +9,13 @@ Phase N+1 does not start until Phase N is ticked.
 
 ---
 
-- [ ] **Phase 0 — Scaffolding & guardrails**
+- [x] **Phase 0 — Scaffolding & guardrails** ✅ (2026-04-24)
   Plan: `docs/plans/2026-04-24-phase-0-scaffolding.md`
-  Completion criteria: monorepo structure exists, 4 guardrail pillars
-  populated, Hardhat + FHEVM plugin installed, smoke test passes
-  (`FHE.asEuint64` on local mock works).
+  Completion criteria met: monorepo structure exists, 4 guardrail
+  pillars populated (CLAUDE.md, PROGRESS.md, CHANGELOG.md,
+  docs/fhe-primitives.md + .claude/settings.local.json), Hardhat +
+  FHEVM plugin installed, Smoke test green (`npx hardhat test` →
+  1 passing).
 
 - [ ] **Phase 1 — Shared libs**
   Plan: `docs/plans/2026-04-24-phase-1-shared-libs.md` *(not yet written)*
