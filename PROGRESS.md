@@ -25,11 +25,16 @@ Phase N+1 does not start until Phase N is ticked.
   lib, branches 100% for 3 libs + 85.71% for TickMath (UniV3
   boundary reverts hard to exercise fully, still above 80% threshold).
 
-- [ ] **Phase 2 — Vault + services**
-  Plan: *(not yet written)*
-  Completion criteria: `NoirVault`, `Oracle`, `Compliance` deploy to
-  local mock and Sepolia; engine registration flow works; 2-of-3
-  oracle quorum verified.
+- [x] **Phase 2 — Vault + services** ✅ (2026-04-24)
+  Plan: `docs/plans/2026-04-24-phase-2-vault-services.md`
+  Completion criteria met: NoirVault / Oracle / Compliance all live on
+  local mock (Sepolia deferred to Phase 9); engine registration via
+  `MockEngine` proves authorization flow; 2-of-3 oracle quorum
+  verified (same-relayer / deviation / staleness / new-cycle cases all
+  tested); 131 tests total passing (57 prior + 74 new: 16 Compliance
+  + 23 Oracle + 15 Vault.Admin + 11 Vault.Balance + 9 Vault.Positions);
+  coverage: Compliance 100%, NoirVault 100% stmts / 90.91% branches,
+  Oracle 100% stmts / 86.11% branches.
 
 - [ ] **Phase 3 — PerpEngine**
   Plan: *(not yet written)*
