@@ -88,30 +88,91 @@ HCU costs from Zama's protocol docs. "Scalar" = ct op plaintext; "Non-scalar" = 
 - Engines use `allowTransient` only. Persistent `allow` lives inside
   Vault for state it owns.
 
-## 5. Async decryption
+## 5. Async decryption (PULL-BASED — corrected 2026-04-24)
 
-Synchronous decryption does NOT exist on FHEVM. All reveals are async:
+Synchronous decryption does NOT exist on FHEVM. All reveals are async.
+
+**⚠️ IMPORTANT CORRECTION**: the push-callback pattern
+(`FHE.requestDecryption(cts, selector) → Gateway auto-invokes selector`)
+documented here originally does NOT exist in `@fhevm/solidity@0.11.1`.
+That was an outdated API description. The installed version uses a
+**pull-based public-decrypt model** that requires an off-chain relayer
+to bridge the decryption result back to the contract.
+
+### 5.1 Correct pattern (verified against Phase 3 implementation)
+
+**On-chain — mark ciphertext publicly decryptable + emit event:**
 
 ```solidity
-// Request decrypt (payable — $ZAMA fee)
-uint256 reqId = FHE.requestDecryption(
-    bytes32[] memory ctHandles,
-    bytes4 callbackSelector
+// Contract computes an ebool / euint on ciphertexts, then:
+FHE.makePubliclyDecryptable(underwater);  // marks handle as decryptable
+emit LiquidationRequested(
+    keccak256(abi.encode(positionId, block.number, block.timestamp)), // local reqId
+    positionId,
+    keeper,
+    FHE.toBytes32(underwater) // the handle the relayer needs to decrypt
 );
+```
 
-// Callback (called by Gateway 15–60s later)
-function _onDecided(
+The contract tracks pending state via `DecryptQueue._enqueue(reqId, keeper, positionId, "")` in the same tx.
+
+**Off-chain — relayer picks up the event and decrypts:**
+
+```typescript
+// Relayer (or test harness) calls:
+const { abiEncodedClearValues, decryptionProof } =
+    await hre.fhevm.publicDecrypt([handle]);
+
+// Relayer then calls back to the contract:
+await contract._onLiquidationDecided(
+    reqId,
+    [handle],             // bytes32[] handlesList
+    abiEncodedClearValues, // bytes abiEncodedCleartexts
+    decryptionProof,       // bytes decryptionProof
+);
+```
+
+**On-chain callback — verify signatures, dequeue, act:**
+
+```solidity
+function _onLiquidationDecided(
     uint256 reqId,
-    bytes memory cleartexts,
+    bytes32[] memory handlesList,
+    bytes memory abiEncodedCleartexts,
     bytes memory decryptionProof
 ) external {
-    FHE.checkSignatures(reqId, cleartexts, decryptionProof);
-    // ALWAYS delete pending entry BEFORE external calls — replay guard
-    delete pending[reqId];
-    bool decoded = abi.decode(cleartexts, (bool));
-    // ... act on decoded
+    // 1. Verify KMS signatures on the decrypted values
+    FHE.checkSignatures(handlesList, abiEncodedCleartexts, decryptionProof);
+
+    // 2. Dequeue BEFORE any external call — replay guard
+    PendingDecrypt memory ctx = _dequeue(reqId);
+
+    // 3. Decode. Note: ebool is encoded as uint256 (0 or 1), NOT as bool.
+    uint256 clearUint = abi.decode(abiEncodedCleartexts, (uint256));
+    bool shouldAct = clearUint != 0;
+
+    // 4. Act on the decrypted value
+    if (shouldAct) { /* ... */ }
 }
 ```
+
+### 5.2 Key API differences vs the original (pre-correction) description
+
+| What the outdated docs said | Reality in v0.11.1 |
+|-----|-----|
+| `FHE.requestDecryption(cts, selector)` returns requestId | **Not implemented.** Use `FHE.makePubliclyDecryptable(ct)` + emit event. |
+| Gateway auto-invokes callback | Relayer manually calls callback after `publicDecrypt` |
+| `FHE.checkSignatures(reqId, cleartexts, proof)` | **Actual:** `FHE.checkSignatures(handlesList, cleartexts, proof)` — takes `bytes32[]` handles, no reqId param |
+| `abi.decode(cleartexts, (bool))` for ebool | **Actual:** `abi.decode(cleartexts, (uint256))` then compare to 0 |
+| `hre.fhevm.awaitDecryptionOracle()` in tests | **Not implemented.** Use `hre.fhevm.publicDecrypt([handle])` which returns the proof bundle directly |
+
+### 5.3 reqId generation
+
+Since there's no Gateway assigning a requestId, the contract generates one locally:
+```solidity
+uint256 reqId = uint256(keccak256(abi.encode(positionId, block.number, block.timestamp)));
+```
+Must be unique per request. DecryptQueue's `_enqueue` will revert on duplicate.
 
 **Fees** (published, paid in $ZAMA pegged to USD):
 - Decryption: $0.001–$0.1 per ciphertext (subscription discounts available)
