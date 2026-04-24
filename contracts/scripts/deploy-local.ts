@@ -1,11 +1,12 @@
 import * as hre from "hardhat";
 
-/// Phase 2 local deploy script.
+/// Phase 3 local deploy script.
 /// Deploys:
 ///   1. MockERC7984 (USDCx mock for local testing)
 ///   2. Compliance (admin = signer[0], initial empty root)
 ///   3. Oracle    (admin = signer[0], relayers = signer[1..3])
 ///   4. NoirVault (admin = signer[0], usdcxToken = MockERC7984)
+///   5. PerpEngine (admin = signer[0], registered on vault)
 async function main() {
   const signers = await hre.ethers.getSigners();
   const [admin, relayerA, relayerB, relayerC] = signers;
@@ -44,8 +45,24 @@ async function main() {
   await vault.waitForDeployment();
   console.log("NoirVault deployed:  ", await vault.getAddress());
 
+  // 5. PerpEngine (Phase 3)
+  const PerpFactory = await hre.ethers.getContractFactory("PerpEngine");
+  const perp = await PerpFactory.deploy(
+    await vault.getAddress(),
+    await oracle.getAddress(),
+    await compliance.getAddress(),
+    admin.address, // liquidationPool = admin for local
+    admin.address,
+  );
+  await perp.waitForDeployment();
+  console.log("PerpEngine deployed: ", await perp.getAddress());
+
+  // Register PerpEngine as authorized on vault
+  await (await vault.registerEngine(await perp.getAddress())).wait();
+  console.log("PerpEngine registered as authorized engine on vault");
+
   console.log("");
-  console.log("=== Phase 2 deploy complete ===");
+  console.log("=== Phase 3 deploy complete ===");
 }
 
 main().catch((err) => {

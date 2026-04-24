@@ -540,3 +540,7 @@ retroactive review. Going forward every phase must pass Tier 1 before tick.
   for all 3 markets (BTC=1, ETH=2, SOL=3) verifying marketId dispatch
   + oracle routing. 3 tests.
   **Files**: `contracts/test/PerpEngine.MultiMarket.test.ts`.
+
+- **Modified**: `contracts/scripts/deploy-local.ts` — includes
+  PerpEngine deploy + auto-registration on vault.
+  **Files**: `contracts/scripts/deploy-local.ts`.
