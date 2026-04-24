@@ -80,6 +80,72 @@ solved design decisions; give future agents full context.
 - **Modified**: `deploy-local.ts` — includes AMM deploy, oracle wiring,
   and PerpEngine.setLiquidationPool(AMM) repoint.
 
+### Phase 4 Tier 1 audit findings (2026-04-24)
+
+Ran spec-compliance + code-quality reviewers in parallel before tick.
+Spec: ✅ Compliant (only stale deploy-local.ts header comment). Quality:
+NEEDS_REWORK — 1 critical (debatable), 3 important, minor nits. All
+addressed in commit `97a5104`:
+
+**Critical (defensive fix)**:
+- `_executeSwap` ACL ordering refactored so all ciphertext derivations
+  + `allowTransient` grants happen BEFORE any `vault.adjustBalance`
+  call. The reviewer noted that FHEVM v0.11.1 `allowTransient` is
+  additive (AMM keeps access after vault call), so the original code
+  was correct — but the new ordering isolates us from hypothetical
+  future ACL-semantics changes. Defensive hardening.
+
+**Important**:
+- `Swapped` event: changed `amountInUsdcx: uint64` (always-0 placeholder)
+  to `amountInHandle: bytes32`. Emits the ciphertext handle for off-chain
+  indexing — privacy preserved (handle requires ACL to decrypt).
+- Swap happy-path test: now explicitly asserts `synth == 0n` for the
+  floor-rounded case (price=3000, amountIn=3000 → amountOut=0).
+  Documents the integer-division edge case rather than skipping.
+- `deploy-local.ts`: updated stale "Phase 3 local deploy" header
+  comment + enumerated items 1-5 to include item 6 (AMMEngine).
+
+**Deferred (Phase 9 or later)**:
+- HCU optimization: swap uses ct×ct safeMul (596k HCU) instead of
+  potential scalar ct×plaintext mul (365k). Saves ~230k HCU/swap
+  if we add `FHESafeMath.safeMulScalar`. Phase 9 perf pass.
+- Forfeit accounting drift (`totalReserveUsdcx` doesn't auto-sync with
+  encrypted vault-balance increments) — documented MVP limitation;
+  Phase 5+ adds decrypt-based resync flow.
+- `_onWithdrawDecided` has no access control beyond `FHE.checkSignatures`
+  — same pattern as `PerpEngine._onLiquidationDecided` (Phase 3);
+  KMS sigs are the auth. Documented across phases.
+
+### Phase 4 complete ✅ (2026-04-24)
+
+- **AMMEngine live** on local mock:
+  - `addLiquidity(uint64)` — sync, fair-ratio share math via plaintext
+    pool counters, encrypted per-user share credit
+  - `requestWithdraw(uint64)` + `_onWithdrawDecided` — async 2-phase via
+    pull-based public-decrypt pattern (fhe-primitives.md §5).
+    `FHE.le(eClaim, userBal)` gate supports partial withdrawals.
+  - `swap(externalEuint64, bytes, uint8)` — sync oracle-pegged, 30bps
+    fee, single-direction (USDCx → synthetic), 3 markets.
+- **PerpEngine integration**: `liquidationPool` repointed to AMM;
+  forfeits land in AMM's vault balance (encrypted increment,
+  plaintext counter not auto-synced — documented limitation).
+- **5 spec deviations** (documented, accepted):
+  1. No UniV3 concentrated liquidity (FHE lacks sqrt + ct/ct div)
+  2. Plaintext pool totals (LP-share privacy preserved; TVL visible)
+  3. Stranded forfeits (Phase 5+ resync)
+  4. No TickMath usage (Phase 1 lib stays pre-positioned)
+  5. LP state in AMM, not Vault (YAGNI)
+- **Test count**: 205 total (176 prior + 29 new: 12 Admin + 5
+  AddLiquidity + 6 Withdraw + 5 Swap + 1 Integration).
+- **Coverage**: AMMEngine 100% stmts / 89.47% branches / 100% funcs
+  / 100% lines. All targets cleared on first pass.
+- **Tier 1 audit**: passed (all critical + important findings
+  fixed pre-merge).
+- **Key plan bug caught**: subagent switched `FHE.eq` → `FHE.le` in
+  `requestWithdraw` to support partial withdrawals (original spec
+  contradicted itself on exact-match vs partial flow).
+- **Ready for Phase 5** (LimitEngine): TP/SL + resting limit orders.
+
 ### Phase 0 scaffolding (in progress)
 
 - **Added**: Design spec `docs/specs/2026-04-24-noirperp-design.md` —

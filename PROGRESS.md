@@ -63,8 +63,18 @@ fuzz + HCU benchmarks + per-contract sign-off) runs once in Phase 9.
   `docs/fhe-primitives.md` §5 corrected. Sepolia deploy deferred
   to Phase 9.
 
-- [ ] **Phase 4 — AMMEngine**
-  Plan: *(not yet written)*
+- [x] **Phase 4 — AMMEngine** ✅ (2026-04-24)
+  Plan: `docs/plans/2026-04-24-phase-4-amm-engine.md`
+  Completion criteria met: AMMEngine live on local mock; addLiquidity
+  (sync), requestWithdraw (async via pull-based public decrypt), swap
+  (sync oracle-pegged) all working. PerpEngine.liquidationPool repointed
+  to AMM; forfeit flow verified end-to-end. 5 documented spec deviations
+  (no UniV3, plaintext pool totals, stranded forfeits, no TickMath,
+  LP state in AMM). Tier 1 audit passed (1 critical flagged — debatable
+  ACL ordering — fixed defensively + 3 important findings addressed).
+  205 tests passing (176 prior + 29 new). Coverage on AMMEngine:
+  100% stmts / 89.47% branches / 100% funcs / 100% lines. Key plan-bug
+  caught by subagent: FHE.eq→FHE.le for partial-withdraw support.
 
 - [ ] **Phase 5 — LimitEngine**
   Plan: *(not yet written)*
