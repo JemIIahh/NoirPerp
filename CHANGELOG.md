@@ -14,6 +14,16 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-24
 
+### Phase 4 — AMMEngine (in progress)
+
+- **Added**: `contracts/contracts/engines/AMMEngine.sol` (Task 1
+  scaffold — admin + swap fee config + pool-state accessors). Inherits
+  `DecryptQueue` for upcoming async-withdraw work. Hybrid privacy:
+  plaintext `totalShares` + `totalReserveUsdcx`, encrypted `_userShares`.
+  12 unit tests.
+  **Files**: `contracts/contracts/engines/AMMEngine.sol`,
+  `contracts/test/AMMEngine.Admin.test.ts`.
+
 ### Phase 0 scaffolding (in progress)
 
 - **Added**: Design spec `docs/specs/2026-04-24-noirperp-design.md` —
