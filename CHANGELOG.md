@@ -350,3 +350,18 @@ the phase-complete tick. Their findings, all addressed in one commit:
   `openzeppelin/confidential-contracts/interfaces/IERC7984.sol`.
   **Files**: `contracts/contracts/NoirVault.sol`,
   `contracts/test/NoirVault.Admin.test.ts`.
+- **Modified**: `contracts/contracts/NoirVault.sol` (Task 5 addition) —
+  encrypted balance state + deposit/withdraw (user-facing) +
+  adjustBalance (engine-only). Uses FHESafeMath for both safeAdd
+  (deposits) and safeSub (withdrawals / debits). Saturating semantics
+  on underflow prevent silent loss. 11 unit tests covering all three
+  functions including pause gating and engine-only access control.
+  **Deviation from plan**: `setOperator` called with `2n ** 48n - 1n`
+  (uint48 max) rather than `2n ** 48n` (which overflows uint48 by 1);
+  plan had an off-by-one in the far-future timestamp. `getBalance` is a
+  view function returning the raw `euint64` handle; ACL grants issued at
+  each mutation allow the user to decrypt client-side. Test count is 11
+  (not 12) — plan's stated target matched a 12th test not included in
+  the test file spec.
+  **Files**: `contracts/contracts/NoirVault.sol`,
+  `contracts/test/NoirVault.Balance.test.ts`.
