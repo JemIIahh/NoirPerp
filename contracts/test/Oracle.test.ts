@@ -157,6 +157,18 @@ describe("Oracle", () => {
       );
       expect(plain).to.equal(50_100n);
     });
+
+    it("getEncryptedPrice (engine-facing) succeeds on a fresh price", async () => {
+      // Covers the engine-facing path (allowTransient, tx-scoped).
+      // We can't decrypt across txs here, but we assert the call succeeds,
+      // proving the trivial-encrypt + allowTransient + allowThis happy path.
+      const t = await now();
+      await (await oracle.connect(relayerA).submitPrice(MARKET_ETH, 3000n, t)).wait();
+      await (await oracle.connect(relayerB).submitPrice(MARKET_ETH, 3005n, t + 1)).wait();
+      const tx = await oracle.getEncryptedPrice(MARKET_ETH);
+      const receipt = await tx.wait();
+      expect(receipt!.status).to.equal(1);
+    });
   });
 
   describe("admin", () => {
@@ -181,6 +193,37 @@ describe("Oracle", () => {
     it("admin can update deviationBps", async () => {
       await (await oracle.setDeviationBps(100)).wait();
       expect(await oracle.deviationBps()).to.equal(100);
+    });
+
+    it("rotateRelayer reverts on out-of-range index", async () => {
+      await expect(
+        oracle.rotateRelayer(3, notRelayer.address)
+      ).to.be.revertedWithCustomError(oracle, "BadIndex");
+    });
+
+    it("rotateRelayer reverts on zero address", async () => {
+      await expect(
+        oracle.rotateRelayer(0, hre.ethers.ZeroAddress)
+      ).to.be.revertedWithCustomError(oracle, "ZeroAddress");
+    });
+
+    it("admin can transfer admin role", async () => {
+      await expect(oracle.transferAdmin(notRelayer.address))
+        .to.emit(oracle, "AdminTransferred")
+        .withArgs(admin.address, notRelayer.address);
+      expect(await oracle.admin()).to.equal(notRelayer.address);
+    });
+
+    it("transferAdmin reverts on zero address", async () => {
+      await expect(
+        oracle.transferAdmin(hre.ethers.ZeroAddress)
+      ).to.be.revertedWithCustomError(oracle, "ZeroAddress");
+    });
+
+    it("non-admin cannot transfer admin role", async () => {
+      await expect(
+        oracle.connect(relayerA).transferAdmin(relayerA.address)
+      ).to.be.revertedWithCustomError(oracle, "NotAdmin");
     });
   });
 });
