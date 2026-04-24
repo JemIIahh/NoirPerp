@@ -376,3 +376,9 @@ the phase-complete tick. Their findings, all addressed in one commit:
   **Files**: `contracts/contracts/NoirVault.sol`,
   `contracts/contracts/test-harness/MockEngine.sol`,
   `contracts/test/NoirVault.Positions.test.ts`.
+- **Added**: `contracts/scripts/deploy-local.ts` — one-shot Phase 2
+  deploy script for the Hardhat local chain. Deploys MockERC7984,
+  Compliance (empty root), Oracle (3 relayers = signers[1..3],
+  staleness 90s, deviation 50bps), NoirVault. Template for Phase 3+
+  engine deploys.
+  **Files**: `contracts/scripts/deploy-local.ts`.
