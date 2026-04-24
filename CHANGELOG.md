@@ -55,6 +55,22 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/contracts/engines/AMMEngine.sol`,
   `contracts/test/AMMEngine.Withdraw.test.ts`.
 
+- **Added**: `AMMEngine.swap` — synchronous oracle-pegged USDCx →
+  synthetic-asset swap. Fee (30 bps default, admin-settable) stays in
+  the pool as stranded reserves (same MVP limitation as liquidation
+  forfeits — not reflected in plaintext `totalReserveUsdcx`).
+  `setOracle(address)` admin function wires the oracle reference.
+  Supports 3 markets (BTC=1, ETH=2, SOL=3). Per-user per-market
+  encrypted synthetic balance tracked in `_syntheticBalance` mapping.
+  FHE ops: `safeMul` + scalar `FHE.div` for fee, scalar `FHE.div` for
+  price conversion — all per fhe-primitives.md §3.
+  `isSenderAllowed` guard on external ciphertext input per CLAUDE.md
+  rule #4. Internal `_executeSwap` helper split out to avoid
+  stack-too-deep (anticipatory — compiler was clean but pattern is
+  consistent with Phase 3 Task 2). 5 unit tests (2 happy-path, 3 guards).
+  **Files**: `contracts/contracts/engines/AMMEngine.sol`,
+  `contracts/test/AMMEngine.Swap.test.ts`.
+
 ### Phase 0 scaffolding (in progress)
 
 - **Added**: Design spec `docs/specs/2026-04-24-noirperp-design.md` —

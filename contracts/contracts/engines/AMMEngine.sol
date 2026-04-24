@@ -6,6 +6,7 @@ import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 import { FHESafeMath } from "../lib/FHESafeMath.sol";
 import { DecryptQueue } from "../lib/DecryptQueue.sol";
 import { NoirVault } from "../NoirVault.sol";
+import { Oracle } from "../services/Oracle.sol";
 
 /// @title AMMEngine
 /// @notice Encrypted reserve pool with LP shares + oracle-pegged swaps.
@@ -24,8 +25,12 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
     uint64 public totalShares;
     uint64 public totalReserveUsdcx;
 
+    // ─── Oracle reference (admin-settable) ────────────────────────
+    Oracle public oracleContract;
+
     // ─── Encrypted per-user state (private) ────────────────────────
     mapping(address user => euint64) private _userShares;
+    mapping(address user => mapping(uint8 marketId => euint64)) private _syntheticBalance;
 
     // ─── Config ───────────────────────────────────────────────────
     uint64 public swapFeeBps = 30;                // 0.30%
@@ -38,12 +43,18 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
     event WithdrawRequested(uint256 indexed requestId, address indexed user, uint64 claimedShares, bytes32 matchHandle);
     event LiquidityRemoved(uint256 indexed requestId, address indexed user, uint64 shares, uint64 payout);
     event WithdrawRejected(uint256 indexed requestId, address indexed user);
+    event OracleSet(address indexed newOracle);
+    event Swapped(address indexed user, uint8 indexed marketId, uint64 amountInUsdcx);
 
     error NotAdmin();
     error ZeroAddress();
     error FeeTooHigh();
     error ZeroAmount();
     error ClaimExceedsPoolTotal();
+    error OracleNotSet();
+    error OraclePriceStale();
+    error InvalidMarket();
+    error NotAllowed();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -210,5 +221,72 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
         vault.adjustBalance(user, ePayout2, true); // credit user
 
         emit LiquidityRemoved(requestId, user, claimedShares, payout);
+    }
+
+    // ─── Oracle wiring ─────────────────────────────────────────────
+
+    function setOracle(address oracle_) external onlyAdmin {
+        if (oracle_ == address(0)) revert ZeroAddress();
+        oracleContract = Oracle(oracle_);
+        emit OracleSet(oracle_);
+    }
+
+    // ─── Swap (synchronous, oracle-pegged, USDCx → synthetic) ──────
+
+    /// @notice Swaps encrypted USDCx for encrypted synthetic-asset credit
+    ///         at the current oracle price, minus `swapFeeBps` fee.
+    /// @dev Fee stays in the pool (increases AMM's vault balance) but
+    ///      does NOT update plaintext totalReserveUsdcx (stranded fee —
+    ///      same MVP limitation as liquidation forfeits).
+    function swap(
+        externalEuint64 eAmountIn,
+        bytes calldata amountProof,
+        uint8 marketId
+    ) external {
+        if (address(oracleContract) == address(0)) revert OracleNotSet();
+        if (marketId < 1 || marketId > 3) revert InvalidMarket();
+
+        (uint64 price, bool fresh) = oracleContract.getPrice(marketId);
+        if (!fresh) revert OraclePriceStale();
+
+        euint64 amountIn = FHE.fromExternal(eAmountIn, amountProof);
+        if (!FHE.isSenderAllowed(amountIn)) revert NotAllowed();
+
+        _executeSwap(amountIn, price, marketId);
+    }
+
+    /// @dev Internal helper split out to avoid stack-too-deep in `swap`.
+    function _executeSwap(euint64 amountIn, uint64 price, uint8 marketId) internal {
+        // Compute fee = amountIn × swapFeeBps / BPS_DIVISOR (scalar div OK per fhe-primitives.md §3)
+        euint64 feeNumerator = FHESafeMath.safeMul(amountIn, FHE.asEuint64(swapFeeBps));
+        euint64 fee = FHE.div(feeNumerator, BPS_DIVISOR);
+        euint64 amountAfterFee = FHESafeMath.safeSub(amountIn, fee);
+
+        // amountOut = amountAfterFee / price (scalar div — price is plaintext uint64)
+        euint64 amountOut = FHE.div(amountAfterFee, price);
+
+        // Debit user's vault USDCx by full amountIn (fee stays in pool)
+        FHE.allowTransient(amountIn, address(vault));
+        vault.adjustBalance(msg.sender, amountIn, false);
+
+        // Credit AMM's vault USDCx by full amountIn
+        // Use a fresh handle (safeAdd copy) to avoid single-use-per-callee ACL reuse
+        euint64 amountInCopy = FHESafeMath.safeAdd(amountIn, FHE.asEuint64(0));
+        FHE.allowTransient(amountInCopy, address(vault));
+        vault.adjustBalance(address(this), amountInCopy, true);
+
+        // Credit user's synthetic-asset balance
+        euint64 currentSynth = _syntheticBalance[msg.sender][marketId];
+        euint64 newSynth = FHESafeMath.safeAdd(currentSynth, amountOut);
+        _syntheticBalance[msg.sender][marketId] = newSynth;
+        FHE.allowThis(newSynth);
+        FHE.allow(newSynth, msg.sender);
+
+        emit Swapped(msg.sender, marketId, 0); // amountIn is encrypted; 0 is placeholder
+    }
+
+    /// @notice Returns encrypted synthetic-asset balance handle for a user.
+    function getSyntheticBalance(address user, uint8 marketId) external view returns (euint64) {
+        return _syntheticBalance[user][marketId];
     }
 }
