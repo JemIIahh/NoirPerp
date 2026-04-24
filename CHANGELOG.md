@@ -33,6 +33,28 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/contracts/engines/AMMEngine.sol`,
   `contracts/test/AMMEngine.AddLiquidity.test.ts`.
 
+- **Added**: `AMMEngine.requestWithdraw` + `_onWithdrawDecided` —
+  async 2-phase withdrawal. Phase 1: engine compares user's encrypted
+  shares to plaintext claim via `FHE.le(eClaim, userBal)`, marks result
+  publicly decryptable, emits `WithdrawRequested` + enqueues. Phase 2
+  (relayer callback): verify KMS sigs (`FHE.checkSignatures`), dequeue
+  pre-external-call (replay guard per CLAUDE.md rule #6), if valid
+  compute pro-rata payout via plaintext math
+  (`payout = claimedShares × totalReserveUsdcx / totalShares`), debit
+  AMM vault, credit user vault, decrement encrypted shares via
+  `FHESafeMath.safeSub`. On mismatch (claim > encrypted balance):
+  emit `WithdrawRejected` no-op.
+  **Deviation from plan**: plan specified `FHE.eq` (exact match only),
+  but that would reject all partial withdrawals. Switched to `FHE.le`
+  (claim ≤ encrypted balance) to support partial withdrawals while still
+  rejecting claims that exceed actual balance. The mismatch test was
+  updated accordingly — it now uses a second depositor (Bob) to raise
+  `totalShares` above Alice's balance, allowing Alice to claim more than
+  she owns without hitting the Phase 1 `ClaimExceedsPoolTotal` guard.
+  6 unit tests (full / partial / mismatch-reject / guards).
+  **Files**: `contracts/contracts/engines/AMMEngine.sol`,
+  `contracts/test/AMMEngine.Withdraw.test.ts`.
+
 ### Phase 0 scaffolding (in progress)
 
 - **Added**: Design spec `docs/specs/2026-04-24-noirperp-design.md` —

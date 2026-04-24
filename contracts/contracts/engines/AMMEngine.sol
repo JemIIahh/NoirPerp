@@ -35,11 +35,15 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
     event SwapFeeChanged(uint64 oldBps, uint64 newBps);
     event LiquidityAdded(address indexed user, uint64 amount, uint64 sharesMinted);
+    event WithdrawRequested(uint256 indexed requestId, address indexed user, uint64 claimedShares, bytes32 matchHandle);
+    event LiquidityRemoved(uint256 indexed requestId, address indexed user, uint64 shares, uint64 payout);
+    event WithdrawRejected(uint256 indexed requestId, address indexed user);
 
     error NotAdmin();
     error ZeroAddress();
     error FeeTooHigh();
     error ZeroAmount();
+    error ClaimExceedsPoolTotal();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -122,5 +126,89 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
         FHE.allow(newShares, msg.sender);
 
         emit LiquidityAdded(msg.sender, amount, sharesToMint);
+    }
+
+    // ─── Liquidity — withdraw (async 2-phase) ──────────────────────
+
+    /// @notice Phase 1: Request withdrawal of `claimedShares` from the
+    ///         caller. Engine computes ebool `matchesExactly` comparing
+    ///         the user's encrypted share balance to the plaintext claim,
+    ///         marks it publicly decryptable, emits event, and enqueues
+    ///         pending state for the callback.
+    /// @dev User must decrypt their share balance client-side first
+    ///      (via FHE.userDecrypt) to know the exact claimedShares value.
+    ///      If wrong, the callback rejects.
+    function requestWithdraw(uint64 claimedShares) external returns (uint256 requestId) {
+        if (claimedShares == 0) revert ZeroAmount();
+        if (claimedShares > totalShares) revert ClaimExceedsPoolTotal();
+
+        euint64 userBal = _userShares[msg.sender];
+        euint64 eClaim = FHE.asEuint64(claimedShares);
+        // isValid: claimedShares ≤ user's encrypted balance (allows partial withdrawals)
+        ebool isValid = FHE.le(eClaim, userBal);
+        FHE.makePubliclyDecryptable(isValid);
+
+        requestId = uint256(keccak256(abi.encode(
+            msg.sender, claimedShares, block.number, block.timestamp
+        )));
+
+        // Encode context: claimedShares — decoded in callback
+        bytes memory ctx = abi.encode(claimedShares);
+        _enqueue(requestId, msg.sender, uint256(uint64(claimedShares)), ctx);
+
+        emit WithdrawRequested(requestId, msg.sender, claimedShares, FHE.toBytes32(isValid));
+    }
+
+    /// @notice Phase 2: Gateway-relayed callback. Verifies KMS signatures,
+    ///         dequeues BEFORE external calls (replay guard), and either
+    ///         processes the payout or rejects on mismatch.
+    function _onWithdrawDecided(
+        uint256 requestId,
+        bytes32[] memory handlesList,
+        bytes memory cleartexts,
+        bytes memory decryptionProof
+    ) external {
+        // 1. Verify KMS signatures first (reverts if invalid)
+        FHE.checkSignatures(handlesList, cleartexts, decryptionProof);
+
+        // 2. Dequeue BEFORE any external call — replay guard
+        PendingDecrypt memory ctx = _dequeue(requestId);
+        address user = ctx.caller;
+        uint64 claimedShares = abi.decode(ctx.context, (uint64));
+
+        // 3. Decode match boolean (encoded as uint256; non-zero = true)
+        uint256 clearUint = abi.decode(cleartexts, (uint256));
+        bool matched = clearUint != 0;
+
+        if (!matched) {
+            emit WithdrawRejected(requestId, user);
+            return;
+        }
+
+        // 4. Compute payout in plaintext: payout = claimedShares × totalReserveUsdcx / totalShares
+        uint256 product = uint256(claimedShares) * uint256(totalReserveUsdcx);
+        uint64 payout = uint64(product / uint256(totalShares));
+
+        // 5. Update plaintext counters
+        totalShares -= claimedShares;
+        totalReserveUsdcx -= payout;
+
+        // 6. Update user's encrypted share balance: subtract claimedShares
+        euint64 eClaim = FHE.asEuint64(claimedShares);
+        euint64 newShares = FHESafeMath.safeSub(_userShares[user], eClaim);
+        _userShares[user] = newShares;
+        FHE.allowThis(newShares);
+        FHE.allow(newShares, user);
+
+        // 7. Debit AMM's vault balance, credit user's vault balance
+        euint64 ePayout = FHE.asEuint64(payout);
+        FHE.allowTransient(ePayout, address(vault));
+        vault.adjustBalance(address(this), ePayout, false); // debit AMM
+
+        euint64 ePayout2 = FHE.asEuint64(payout);
+        FHE.allowTransient(ePayout2, address(vault));
+        vault.adjustBalance(user, ePayout2, true); // credit user
+
+        emit LiquidityRemoved(requestId, user, claimedShares, payout);
     }
 }
