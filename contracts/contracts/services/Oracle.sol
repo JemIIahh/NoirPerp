@@ -36,6 +36,8 @@ contract Oracle is ZamaEthereumConfig {
     event PriceCommitted(uint8 indexed marketId, uint64 price, uint64 timestamp);
     event RelayerRotated(uint8 indexed index, address oldRelayer, address newRelayer);
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
+    event StalenessChanged(uint256 oldValue, uint256 newValue);
+    event DeviationBpsChanged(uint256 oldValue, uint256 newValue);
 
     error NotRelayer();
     error NotAdmin();
@@ -155,11 +157,15 @@ contract Oracle is ZamaEthereumConfig {
     }
 
     function setStalenessSeconds(uint256 s) external onlyAdmin {
+        uint256 old = stalenessSeconds;
         stalenessSeconds = s;
+        emit StalenessChanged(old, s);
     }
 
     function setDeviationBps(uint256 d) external onlyAdmin {
+        uint256 old = deviationBps;
         deviationBps = d;
+        emit DeviationBpsChanged(old, d);
     }
 
     function transferAdmin(address newAdmin) external onlyAdmin {

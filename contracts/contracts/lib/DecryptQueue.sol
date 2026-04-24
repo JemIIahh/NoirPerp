@@ -77,6 +77,15 @@ abstract contract DecryptQueue {
 
     /// @notice Anyone can call to sweep stale pending entries past timeout.
     ///         Reverts if any id is not pending or not yet stale.
+    /// @dev Permissionless by design (storage-bloat GC). ACCEPTED GRIEFING:
+    ///      after DECRYPT_TIMEOUT (10 min), anyone can cleanupStale a pending
+    ///      entry before the Gateway callback arrives. If that happens, the
+    ///      callback will revert with `DecryptNotPending` and the engine must
+    ///      re-request the decrypt (costing another $0.001–$0.10 Gateway fee).
+    ///      No funds are at risk — the griefing cost is per-decrypt bounded.
+    ///      10 min timeout vs 15–60s typical Gateway latency gives ~10x
+    ///      safety margin, so in practice callbacks arrive well before
+    ///      cleanup is permitted.
     function cleanupStale(uint256[] calldata requestIds) external {
         uint256 len = requestIds.length;
         for (uint256 i = 0; i < len; i++) {
