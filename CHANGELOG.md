@@ -137,3 +137,67 @@ solved design decisions; give future agents full context.
   FHEVM toolchain and the guardrail docs in place.
 - **Files**: see individual commits in the `git log`
   (commit range `86103a6..HEAD` on branch `phase-0-scaffolding`).
+
+### Phase 0 post-review fixes (2026-04-24)
+
+Two independent reviewers (spec compliance + code quality) ran after
+the phase-complete tick. Their findings, all addressed in one commit:
+
+- **Fix (CRITICAL)**: `contracts/package.json` had an uncommitted
+  local modification bumping `@zama-fhe/relayer-sdk` from `^0.4.2` to
+  `^0.4.1`. Tests passed locally because `node_modules/` had the right
+  version, but a fresh `git clone` + `npm install` would have
+  re-installed `^0.4.2` and broken plugin init. Committed the pin,
+  also tightened `^0.4.1` to exact `0.4.1` (plugin enforces exact).
+  **Files**: `contracts/package.json`, `contracts/package-lock.json`.
+
+- **Fix**: Added `fhevmTemp/` to `.gitignore`. `@fhevm/hardhat-plugin`
+  creates this directory during compile/test as a working dir; was
+  showing up as untracked noise in `git status`.
+  Also removed duplicate `out/` entry that appeared under both
+  "Build" and "Foundry (future)" sections.
+  **Files**: `.gitignore`.
+
+- **Fix**: `hardhat.config.ts` previously passed an empty-string
+  `ETHERSCAN_API_KEY` to the etherscan config even when unset,
+  producing misleading auth errors on `hardhat verify`. Now passes
+  the config only when the key is set.
+  **Files**: `contracts/hardhat.config.ts`.
+
+- **Fix**: Removed `deploy:local` and `deploy:sepolia` scripts from
+  `contracts/package.json` — they pointed at files that don't exist
+  yet (Phase 2/3 adds real deploy scripts). Keeping them now would
+  violate CLAUDE.md rule #4 ("no placeholder code").
+  **Files**: `contracts/package.json`.
+
+- **Fix**: Added explicit in-body comment on `Smoke.sol:setValue`
+  marking it as TOOLCHAIN SMOKE TEST ONLY to prevent future agents
+  from copy-pasting the open-setter pattern into real engines.
+  **Files**: `contracts/contracts/Smoke.sol`.
+
+- **Fix**: `docs/fhe-primitives.md` §9 referenced the smoke test file
+  as `contracts/test/smoke.test.ts` (lowercase) — actual file is
+  `Smoke.test.ts`. Matters on case-sensitive filesystems (Linux CI).
+  **Files**: `docs/fhe-primitives.md`.
+
+- **Added**: `docs/fhe-primitives.md` §10 — "Hardhat plugin
+  integration notes" documenting the `import * as hre from "hardhat"`
+  + `FhevmType from "@fhevm/hardhat-plugin"` API pattern we
+  discovered. The `{ ethers, fhevm } from "hardhat"` pattern in the
+  Phase 0 plan does NOT work; this note prevents future agents from
+  re-tripping on it.
+  **Files**: `docs/fhe-primitives.md`.
+
+- **Deferred** (noted, not fixed in this commit): `tsconfig.json`
+  does not `include` the `contracts/` directory. Low risk today
+  (Solidity files don't go through tsc), but if we ever place `.ts`
+  files under `contracts/contracts/` they'd be silently ignored.
+  Will revisit when needed.
+
+- **Deferred** (intentional historical artifact): `docs/specs/2026-04-24-noirperp-design.md`
+  still references `SepoliaConfig` (should be `ZamaEthereumConfig`)
+  and `@zama-fhe/relayer-sdk ^0.4.2` (should be exact `0.4.1`). The
+  design spec is a point-in-time approved document; corrections live
+  in `docs/fhe-primitives.md` (the LIVING DOC). Per CLAUDE.md
+  priority, `fhe-primitives.md` overrides the spec for FHE primitive
+  details.

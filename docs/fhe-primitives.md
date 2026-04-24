@@ -175,5 +175,22 @@ When updating this doc:
 2. Check `@fhevm/solidity` on npm for new major versions
 3. Check OpenZeppelin confidential-contracts changelog
 4. Update version pins in §1, addresses in §2, op table in §3
-5. Test the smoke test in `contracts/test/smoke.test.ts` still passes
+5. Test the smoke test in `contracts/test/Smoke.test.ts` still passes
 6. Commit with `docs: refresh FHEVM primitives (verified YYYY-MM-DD)`
+
+## 10. Hardhat plugin integration notes (from Phase 0 execution)
+
+Discovered while writing `contracts/test/Smoke.test.ts`:
+
+1. **`fhevm` is NOT a named export of `"hardhat"`**. The `@fhevm/hardhat-plugin` attaches it to the HRE (Hardhat Runtime Environment) via TypeScript type-extension. Correct import pattern:
+   ```typescript
+   import * as hre from "hardhat";
+   import { FhevmType } from "@fhevm/hardhat-plugin";
+   // use: hre.fhevm.userDecryptEuint(FhevmType.euint64, handle, contractAddress, signer);
+   //      hre.ethers.getContractFactory(...)
+   ```
+   The plan had `import { ethers, fhevm } from "hardhat"` — that does NOT work.
+
+2. **`userDecryptEuint` signature**: `(fhevmType: FhevmType, handleBytes32: string | bigint, contractAddress: string, user: Signer) → Promise<bigint>`. Both `string` and `bigint` handle inputs are accepted; ethers v6 returns `bytes32` as `string` from a view call, so no casting is typically needed.
+
+3. **Mock FHEVM auto-fulfills decrypt**: in test environment, `hre.fhevm.userDecryptEuint` resolves synchronously (no Gateway latency); in Sepolia it uses the Relayer SDK's userDecrypt flow, which DOES require a user signature prompt.

@@ -10,8 +10,6 @@
     "test:sepolia": "hardhat test --network sepolia",
     "coverage": "hardhat coverage",
     "node": "hardhat node",
-    "deploy:local": "hardhat run scripts/deploy-local.ts",
-    "deploy:sepolia": "hardhat run scripts/deploy-sepolia.ts --network sepolia",
     "clean": "hardhat clean",
     "typechain": "hardhat typechain"
   },
@@ -31,7 +29,7 @@
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.0.0",
-    "@zama-fhe/relayer-sdk": "^0.4.2",
+    "@zama-fhe/relayer-sdk": "0.4.1",
     "chai": "^4.5.0",
     "dotenv": "^16.4.7",
     "ethers": "^6.13.0",

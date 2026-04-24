@@ -13,6 +13,7 @@ cache/
 typechain/
 typechain-types/
 .fhevm/
+fhevmTemp/
 
 # Hardhat
 coverage/
@@ -46,6 +47,5 @@ frontend/.vite/
 logs/
 
 # Foundry (future)
-out/
 cache_forge/
 broadcast/

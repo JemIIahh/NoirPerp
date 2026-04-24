@@ -11,6 +11,9 @@ contract Smoke is ZamaEthereumConfig {
     euint64 private _value;
 
     /// @notice Stores a trivially-encrypted uint64 and allows msg.sender to decrypt it.
+    /// @dev PHASE 0 TOOLCHAIN SMOKE TEST ONLY — do NOT copy this pattern into engines.
+    ///      No access control is intentional; this file will be removed once phase-0
+    ///      toolchain validation is complete. See CLAUDE.md for real engine patterns.
     /// @param plainValue The plaintext value to trivially encrypt.
     function setValue(uint64 plainValue) external {
         euint64 encrypted = FHE.asEuint64(plainValue);

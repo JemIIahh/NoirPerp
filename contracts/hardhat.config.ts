@@ -8,7 +8,7 @@ dotenv.config();
 const PRIVATE_KEY = process.env.PRIVATE_KEY ?? "";
 const SEPOLIA_RPC_URL =
   process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia.publicnode.com";
-const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY ?? "";
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -32,9 +32,9 @@ const config: HardhatUserConfig = {
     },
   },
   etherscan: {
-    apiKey: {
-      sepolia: ETHERSCAN_API_KEY,
-    },
+    apiKey: ETHERSCAN_API_KEY
+      ? { sepolia: ETHERSCAN_API_KEY }
+      : ({} as Record<string, string>),
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS === "true",
