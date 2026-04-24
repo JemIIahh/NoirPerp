@@ -49,10 +49,19 @@ fuzz + HCU benchmarks + per-contract sign-off) runs once in Phase 9.
   coverage: Compliance 100%, NoirVault 100% stmts / 90.91% branches,
   Oracle 100% stmts / 86.11% branches.
 
-- [ ] **Phase 3 — PerpEngine**
-  Plan: *(not yet written)*
-  Completion criteria: open/close/liquidate work for BTC/ETH/SOL on
-  Sepolia; bot-triggered liquidation end-to-end.
+- [x] **Phase 3 — PerpEngine** ✅ (2026-04-24)
+  Plan: `docs/plans/2026-04-24-phase-3-perp-engine.md`
+  Completion criteria met: PerpEngine live on local mock; open +
+  close + liquidate work for all 3 markets (BTC=1, ETH=2, SOL=3);
+  async liquidation via pull-based public-decrypt pattern verified
+  end-to-end; Tier 1 audit ran + 2 critical + 3 important findings
+  fixed pre-merge; coverage 97.53% stmts / 84.48% branches / 100%
+  funcs / 97.96% lines on PerpEngine; 176 tests passing (138 prior
+  + 38 new: 5 AccessGrants + 7 Open + 7 Close + 4 Liquidation + 3
+  MultiMarket + 12 Admin). Key discovery: FHEVM v0.11.1 async
+  decryption is pull-based (relayer-mediated), NOT push-callback;
+  `docs/fhe-primitives.md` §5 corrected. Sepolia deploy deferred
+  to Phase 9.
 
 - [ ] **Phase 4 — AMMEngine**
   Plan: *(not yet written)*
