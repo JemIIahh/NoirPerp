@@ -44,7 +44,9 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
     event LiquidityRemoved(uint256 indexed requestId, address indexed user, uint64 shares, uint64 payout);
     event WithdrawRejected(uint256 indexed requestId, address indexed user);
     event OracleSet(address indexed newOracle);
-    event Swapped(address indexed user, uint8 indexed marketId, uint64 amountInUsdcx);
+    /// @notice Emitted on every swap. `amountInHandle` is the bytes32 ciphertext
+    ///         handle for off-chain indexing — privacy preserved (no decrypt without ACL).
+    event Swapped(address indexed user, uint8 indexed marketId, bytes32 amountInHandle);
 
     error NotAdmin();
     error ZeroAddress();
@@ -256,33 +258,46 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
     }
 
     /// @dev Internal helper split out to avoid stack-too-deep in `swap`.
+    ///      Defensive ordering: all ciphertext derivations + ACL grants
+    ///      happen BEFORE any external vault call. This isolates us from
+    ///      hypothetical future FHEVM ACL-semantics changes (the current
+    ///      v0.11.1 additive-allowTransient model would tolerate either
+    ///      ordering, but we prefer the more robust pattern).
     function _executeSwap(euint64 amountIn, uint64 price, uint8 marketId) internal {
-        // Compute fee = amountIn × swapFeeBps / BPS_DIVISOR (scalar div OK per fhe-primitives.md §3)
+        // 1. Compute fee = amountIn × swapFeeBps / BPS_DIVISOR
+        //    (scalar div OK per fhe-primitives.md §3)
         euint64 feeNumerator = FHESafeMath.safeMul(amountIn, FHE.asEuint64(swapFeeBps));
         euint64 fee = FHE.div(feeNumerator, BPS_DIVISOR);
         euint64 amountAfterFee = FHESafeMath.safeSub(amountIn, fee);
 
-        // amountOut = amountAfterFee / price (scalar div — price is plaintext uint64)
+        // 2. amountOut = amountAfterFee / price (scalar div)
         euint64 amountOut = FHE.div(amountAfterFee, price);
 
-        // Debit user's vault USDCx by full amountIn (fee stays in pool)
-        FHE.allowTransient(amountIn, address(vault));
-        vault.adjustBalance(msg.sender, amountIn, false);
-
-        // Credit AMM's vault USDCx by full amountIn
-        // Use a fresh handle (safeAdd copy) to avoid single-use-per-callee ACL reuse
+        // 3. Derive a separate handle for the AMM-credit path BEFORE any vault calls.
+        //    Even though FHEVM v0.11.1 `allowTransient` is additive (AMM keeps
+        //    access to `amountIn` after the first vault call), deriving the copy
+        //    up-front isolates us from future ACL-semantics changes.
         euint64 amountInCopy = FHESafeMath.safeAdd(amountIn, FHE.asEuint64(0));
-        FHE.allowTransient(amountInCopy, address(vault));
-        vault.adjustBalance(address(this), amountInCopy, true);
 
-        // Credit user's synthetic-asset balance
+        // 4. Grant vault transient ACL on BOTH ciphertexts up-front.
+        FHE.allowTransient(amountIn, address(vault));
+        FHE.allowTransient(amountInCopy, address(vault));
+
+        // 5. Now perform the two vault calls.
+        vault.adjustBalance(msg.sender, amountIn, false);      // debit user
+        vault.adjustBalance(address(this), amountInCopy, true); // credit AMM
+
+        // 6. Credit user's synthetic-asset balance
         euint64 currentSynth = _syntheticBalance[msg.sender][marketId];
         euint64 newSynth = FHESafeMath.safeAdd(currentSynth, amountOut);
         _syntheticBalance[msg.sender][marketId] = newSynth;
         FHE.allowThis(newSynth);
         FHE.allow(newSynth, msg.sender);
 
-        emit Swapped(msg.sender, marketId, 0); // amountIn is encrypted; 0 is placeholder
+        // 7. Emit swap event with the encrypted amountIn handle for off-chain
+        //    indexing. The handle stays private (requires FHE.allow to decrypt),
+        //    but monitoring can correlate swaps per user/market.
+        emit Swapped(msg.sender, marketId, FHE.toBytes32(amountIn));
     }
 
     /// @notice Returns encrypted synthetic-asset balance handle for a user.

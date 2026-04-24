@@ -94,14 +94,20 @@ describe("AMMEngine — swap (USDCx → synthetic ETH)", () => {
         amtEnc.handles[0], amtEnc.inputProof, MARKET_ETH
       )).wait();
 
-      // ethOut = floor((3000 - 9) / 3000) = 0 with integer div. This test
-      // just verifies execution without revert + sane accounting.
+      // ethOut = floor((3000 - 9) / 3000) = 0 with integer div.
+      // Verifies execution + sane vault accounting + explicit assertion
+      // that synth == 0 (documented floor-rounding edge case: amountIn
+      // must exceed price × (BPS / (BPS - feeBps)) for any synth output).
       const vaultBal = await decrypt(
         await vault.getBalance(alice.address),
         await vault.getAddress(),
         alice,
       );
       expect(vaultBal).to.equal(7_000n); // 10_000 - 3_000
+
+      const synthHandle = await amm.getSyntheticBalance(alice.address, MARKET_ETH);
+      const synth = await decrypt(synthHandle, await amm.getAddress(), alice);
+      expect(synth).to.equal(0n); // floor-rounded to zero — KNOWN edge case
     });
 
     it("swap with price=3 produces non-zero synthetic output", async () => {

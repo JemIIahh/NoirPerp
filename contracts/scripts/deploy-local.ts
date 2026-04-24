@@ -1,12 +1,14 @@
 import * as hre from "hardhat";
 
-/// Phase 3 local deploy script.
+/// Phase 4 local deploy script.
 /// Deploys:
 ///   1. MockERC7984 (USDCx mock for local testing)
 ///   2. Compliance (admin = signer[0], initial empty root)
 ///   3. Oracle    (admin = signer[0], relayers = signer[1..3])
 ///   4. NoirVault (admin = signer[0], usdcxToken = MockERC7984)
 ///   5. PerpEngine (admin = signer[0], registered on vault)
+///   6. AMMEngine (admin = signer[0], registered on vault, oracle wired,
+///                 liquidationPool repointed from PerpEngine)
 async function main() {
   const signers = await hre.ethers.getSigners();
   const [admin, relayerA, relayerB, relayerC] = signers;
