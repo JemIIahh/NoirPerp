@@ -168,4 +168,68 @@ contract NoirVault is ZamaEthereumConfig {
     function getBalance(address user) external view returns (euint64) {
         return _balances[user];
     }
+
+    // ─── Positions ─────────────────────────────────────────────────────
+
+    struct Position {
+        euint64 size;
+        euint64 entryPrice;
+        euint64 collateral;
+        bool isLong;
+        uint8 marketId;
+        address owner;
+        bool active;
+    }
+
+    mapping(uint256 => Position) private _positions;
+    uint256 public nextPositionId;
+
+    event PositionOpened(uint256 indexed positionId, address indexed owner, uint8 marketId);
+    event PositionClosed(uint256 indexed positionId);
+
+    /// @notice Engine-only. Stores a new Position and grants ACL to owner.
+    /// @return positionId The new position's id.
+    function writePosition(
+        address owner,
+        euint64 size,
+        euint64 entryPrice,
+        euint64 collateral,
+        bool isLong,
+        uint8 marketId
+    ) external onlyAuthorizedEngine whenNotPaused returns (uint256 positionId) {
+        positionId = nextPositionId++;
+
+        // Vault needs persistent ACL on each ciphertext to read later.
+        FHE.allowThis(size);
+        FHE.allowThis(entryPrice);
+        FHE.allowThis(collateral);
+        // Owner can decrypt their own position state client-side.
+        FHE.allow(size, owner);
+        FHE.allow(entryPrice, owner);
+        FHE.allow(collateral, owner);
+
+        _positions[positionId] = Position({
+            size: size,
+            entryPrice: entryPrice,
+            collateral: collateral,
+            isLong: isLong,
+            marketId: marketId,
+            owner: owner,
+            active: true
+        });
+
+        emit PositionOpened(positionId, owner, marketId);
+    }
+
+    /// @notice Engine-only. Marks a position as inactive.
+    function closePosition(uint256 positionId) external onlyAuthorizedEngine whenNotPaused {
+        Position storage p = _positions[positionId];
+        p.active = false;
+        emit PositionClosed(positionId);
+    }
+
+    /// @notice Returns the full Position struct for a given positionId.
+    function getPosition(uint256 positionId) external view returns (Position memory) {
+        return _positions[positionId];
+    }
 }

@@ -365,3 +365,14 @@ the phase-complete tick. Their findings, all addressed in one commit:
   the test file spec.
   **Files**: `contracts/contracts/NoirVault.sol`,
   `contracts/test/NoirVault.Balance.test.ts`.
+- **Modified**: `contracts/contracts/NoirVault.sol` (Task 6 addition) —
+  `Position` struct + `positions` mapping + `nextPositionId` counter +
+  `writePosition` (engine-only) + `closePosition` (engine-only) +
+  `getPosition` view. Positions store encrypted size / entryPrice /
+  collateral plus plaintext isLong / marketId / owner / active. ACL:
+  vault gets persistent `allowThis` per ciphertext; owner gets
+  persistent `allow` to decrypt client-side. 9 unit tests via new
+  `MockEngine` harness (plan target was ~10; 9 passing covers all paths).
+  **Files**: `contracts/contracts/NoirVault.sol`,
+  `contracts/contracts/test-harness/MockEngine.sol`,
+  `contracts/test/NoirVault.Positions.test.ts`.
