@@ -46,4 +46,44 @@ contract MockEngine is ZamaEthereumConfig {
         FHE.allowTransient(delta, address(vault));
         vault.adjustBalance(user, delta, isCredit);
     }
+
+    // ─── Access-grant helpers (for Phase 3 Task 1 tests) ──────────────
+
+    euint64 public lastReadBalance;
+
+    euint64 public lastReadSize;
+    euint64 public lastReadEntry;
+    euint64 public lastReadCollateral;
+    address public lastReadOwner;
+    uint8 public lastReadMarketId;
+    bool public lastReadIsLong;
+    bool public lastReadActive;
+
+    /// @notice Calls vault.allowBalanceAccess, stores the handle with
+    ///         persistent allow to the tx sender so tests can decrypt.
+    function readAndCopyBalance(address user) external {
+        euint64 bal = vault.allowBalanceAccess(user);
+        lastReadBalance = bal;
+        FHE.allowThis(bal);
+        FHE.allow(bal, msg.sender);
+    }
+
+    /// @notice Calls vault.allowPositionAccess, copies all fields to
+    ///         storage with persistent allow for test decryption.
+    function readAndCopyPosition(uint256 positionId) external {
+        NoirVault.Position memory p = vault.allowPositionAccess(positionId);
+        lastReadSize = p.size;
+        lastReadEntry = p.entryPrice;
+        lastReadCollateral = p.collateral;
+        lastReadOwner = p.owner;
+        lastReadMarketId = p.marketId;
+        lastReadIsLong = p.isLong;
+        lastReadActive = p.active;
+        FHE.allowThis(p.size);
+        FHE.allowThis(p.entryPrice);
+        FHE.allowThis(p.collateral);
+        FHE.allow(p.size, msg.sender);
+        FHE.allow(p.entryPrice, msg.sender);
+        FHE.allow(p.collateral, msg.sender);
+    }
 }

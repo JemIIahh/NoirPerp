@@ -467,3 +467,17 @@ retroactive review. Going forward every phase must pass Tier 1 before tick.
 - Test strengthening (pause-positive path, over-withdraw token delta check)
 
 **Final Phase 2 test count**: 138 passing.
+
+### Phase 3 — PerpEngine (in progress)
+
+- **Added**: `NoirVault.allowBalanceAccess(user)` and
+  `NoirVault.allowPositionAccess(positionId)` — engine-gated functions
+  that grant `msg.sender` (authorized engine) transient ACL on the
+  vault-stored ciphertexts and return the handles. Satisfies design
+  spec §4.1's `grantTransient` contract. Enables PerpEngine to read
+  vault state and compute FHE ops on it.
+  Also added access-grant helpers to MockEngine harness for tests.
+  5 unit tests (balance access + position access + non-engine guards).
+  **Files**: `contracts/contracts/NoirVault.sol`,
+  `contracts/contracts/test-harness/MockEngine.sol`,
+  `contracts/test/NoirVault.AccessGrants.test.ts`.

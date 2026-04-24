@@ -186,6 +186,23 @@ contract NoirVault is ZamaEthereumConfig {
         return _balances[user];
     }
 
+    /// @notice Engine-only. Grants `msg.sender` transient ACL on the user's
+    ///         encrypted balance + returns the handle. Use from engines that
+    ///         need to read a balance for FHE computation (e.g., affordability
+    ///         check in PerpEngine.openPosition).
+    /// @dev Vault is the persistent ACL owner; only the vault can grant
+    ///      transient access to other contracts. The returned handle is
+    ///      tx-scoped for the caller.
+    function allowBalanceAccess(address user)
+        external
+        onlyAuthorizedEngine
+        returns (euint64)
+    {
+        euint64 bal = _balances[user];
+        FHE.allowTransient(bal, msg.sender);
+        return bal;
+    }
+
     // ─── Positions ─────────────────────────────────────────────────────
     // NOTE: `orders` mapping (Darkpool / Limit engines) is DEFERRED to
     //       Phase 5 & 6; `lpPositions` mapping (AMM engine) is DEFERRED
@@ -262,5 +279,21 @@ contract NoirVault is ZamaEthereumConfig {
     /// @notice Returns the full Position struct for a given positionId.
     function getPosition(uint256 positionId) external view returns (Position memory) {
         return _positions[positionId];
+    }
+
+    /// @notice Engine-only. Grants `msg.sender` transient ACL on each of the
+    ///         position's encrypted fields (size, entryPrice, collateral) and
+    ///         returns the full struct. Used by PerpEngine.closePosition and
+    ///         PerpEngine.requestLiquidation to read stored state.
+    function allowPositionAccess(uint256 positionId)
+        external
+        onlyAuthorizedEngine
+        returns (Position memory)
+    {
+        Position memory p = _positions[positionId];
+        FHE.allowTransient(p.size, msg.sender);
+        FHE.allowTransient(p.entryPrice, msg.sender);
+        FHE.allowTransient(p.collateral, msg.sender);
+        return p;
     }
 }
