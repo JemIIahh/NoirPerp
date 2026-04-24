@@ -171,4 +171,48 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         FHE.allowTransient(finalCollateral, address(vault));
         positionId = vault.writePosition(user, finalSize, ePrice, finalCollateral, isLong, marketId);
     }
+
+    // ─── Close position (synchronous) ──────────────────────────────────
+
+    /// @notice Closes a caller-owned position. Computes encrypted PnL
+    ///         synchronously using multiplication-only math, credits payout
+    ///         to the caller's vault balance, and marks the position inactive.
+    /// @dev Caller decrypts their updated balance client-side to observe
+    ///      realized value. Saturating safe-math throughout — losses that
+    ///      exceed collateral produce 0 payout, never negative.
+    function closePosition(uint256 positionId) external whenNotPaused {
+        // Fetch position with transient ACL on each ciphertext field
+        NoirVault.Position memory p = vault.allowPositionAccess(positionId);
+
+        // Ownership + lifecycle guards (plaintext fields, no FHE needed)
+        if (p.owner != msg.sender) revert NotPositionOwner();
+        if (!p.active) revert PositionNotActive();
+
+        // Oracle freshness
+        (uint64 price, bool fresh) = oracle.getPrice(p.marketId);
+        if (!fresh) revert OraclePriceStale();
+        euint64 ePrice = FHE.asEuint64(price);
+
+        // Compute profit + loss branches (both non-negative)
+        euint64 profit;
+        euint64 loss;
+        if (p.isLong) {
+            (profit, loss) = MarginMath.pnlLong(p.size, p.entryPrice, ePrice);
+        } else {
+            (profit, loss) = MarginMath.pnlShort(p.size, p.entryPrice, ePrice);
+        }
+
+        // Payout = safeAdd(safeSub(collateral, loss), profit). Saturating.
+        euint64 collMinusLoss = FHESafeMath.safeSub(p.collateral, loss);
+        euint64 payout = FHESafeMath.safeAdd(collMinusLoss, profit);
+
+        // Credit user's vault balance
+        FHE.allowTransient(payout, address(vault));
+        vault.adjustBalance(p.owner, payout, true);
+
+        // Mark position closed
+        vault.closePosition(positionId);
+
+        emit PositionClosed(positionId, p.owner);
+    }
 }

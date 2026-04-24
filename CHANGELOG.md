@@ -497,3 +497,13 @@ retroactive review. Going forward every phase must pass Tier 1 before tick.
   `_settle` internal helpers (no viaIR needed).
   **Files**: `contracts/contracts/engines/PerpEngine.sol`,
   `contracts/test/PerpEngine.Open.test.ts`.
+
+- **Added**: `PerpEngine.closePosition(positionId)` — synchronous close.
+  Fetches position via `vault.allowPositionAccess`, computes encrypted
+  PnL via `MarginMath.pnlLong/pnlShort` (profit/loss branches), pays
+  out `safeAdd(safeSub(collateral, loss), profit)` to user's vault
+  balance, marks position inactive. Saturating throughout — loss
+  exceeding collateral produces 0 payout. 7 unit tests (profitable,
+  losing, max-loss-saturation, flat, ownership, double-close, stale oracle).
+  **Files**: `contracts/contracts/engines/PerpEngine.sol`,
+  `contracts/test/PerpEngine.Close.test.ts`.
