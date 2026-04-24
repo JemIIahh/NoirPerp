@@ -481,3 +481,19 @@ retroactive review. Going forward every phase must pass Tier 1 before tick.
   **Files**: `contracts/contracts/NoirVault.sol`,
   `contracts/contracts/test-harness/MockEngine.sol`,
   `contracts/test/NoirVault.AccessGrants.test.ts`.
+
+- **Added**: `contracts/contracts/engines/PerpEngine.sol` — perpetual
+  futures engine (Task 2 scaffold: admin + openPosition). Inherits
+  `DecryptQueue` for later async-liquidation work. Config locked at
+  construction: MAX_LEVERAGE=20, MAINT_MARGIN=500bps, LIQ_FEE=50bps.
+  `openPosition` synchronous: compliance gate, oracle freshness, then
+  FHE-guarded balance + margin check with silent-zero on failure.
+  7 unit tests.
+  **Deviation**: `whenNotPaused` uses local `error VaultPaused()` on
+  PerpEngine rather than `NoirVault.VaultPaused()` cross-contract
+  reference. Solidity ^0.8.27 supports the cross-contract syntax but
+  the local error is cleaner and avoids tight coupling. Stack-too-deep
+  resolved by splitting `openPosition` into `_computeFinals` +
+  `_settle` internal helpers (no viaIR needed).
+  **Files**: `contracts/contracts/engines/PerpEngine.sol`,
+  `contracts/test/PerpEngine.Open.test.ts`.
