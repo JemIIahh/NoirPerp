@@ -77,6 +77,9 @@ solved design decisions; give future agents full context.
   MVP limitation: `totalReserveUsdcx` plaintext counter is NOT
   incremented (forfeits stranded). Phase 5+ adds resync flow.
 
+- **Modified**: `deploy-local.ts` — includes AMM deploy, oracle wiring,
+  and PerpEngine.setLiquidationPool(AMM) repoint.
+
 ### Phase 0 scaffolding (in progress)
 
 - **Added**: Design spec `docs/specs/2026-04-24-noirperp-design.md` —

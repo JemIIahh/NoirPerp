@@ -61,8 +61,22 @@ async function main() {
   await (await vault.registerEngine(await perp.getAddress())).wait();
   console.log("PerpEngine registered as authorized engine on vault");
 
+  // 6. AMMEngine (Phase 4)
+  const AMMFactory = await hre.ethers.getContractFactory("AMMEngine");
+  const amm = await AMMFactory.deploy(await vault.getAddress(), admin.address);
+  await amm.waitForDeployment();
+  console.log("AMMEngine deployed:  ", await amm.getAddress());
+  await (await vault.registerEngine(await amm.getAddress())).wait();
+  console.log("AMMEngine registered as authorized engine on vault");
+
+  await (await amm.setOracle(await oracle.getAddress())).wait();
+  console.log("AMMEngine oracle set");
+
+  await (await perp.setLiquidationPool(await amm.getAddress())).wait();
+  console.log("PerpEngine liquidationPool repointed to AMMEngine");
+
   console.log("");
-  console.log("=== Phase 3 deploy complete ===");
+  console.log("=== Phase 4 deploy complete ===");
 }
 
 main().catch((err) => {
