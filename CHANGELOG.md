@@ -24,6 +24,15 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/contracts/engines/AMMEngine.sol`,
   `contracts/test/AMMEngine.Admin.test.ts`.
 
+- **Added**: `AMMEngine.addLiquidity(uint64 amount)` — sync deposit.
+  Plaintext amount; encrypted LP share credit. Fair-ratio math via
+  plaintext `totalShares` + `totalReserveUsdcx` counters. Debits user's
+  vault USDCx balance, credits AMM's vault balance, credits user's
+  encrypted share. 5 unit tests (bootstrap, fair-ratio, accumulation,
+  zero-amount guard).
+  **Files**: `contracts/contracts/engines/AMMEngine.sol`,
+  `contracts/test/AMMEngine.AddLiquidity.test.ts`.
+
 ### Phase 0 scaffolding (in progress)
 
 - **Added**: Design spec `docs/specs/2026-04-24-noirperp-design.md` —

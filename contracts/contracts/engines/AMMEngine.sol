@@ -34,10 +34,12 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
 
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
     event SwapFeeChanged(uint64 oldBps, uint64 newBps);
+    event LiquidityAdded(address indexed user, uint64 amount, uint64 sharesMinted);
 
     error NotAdmin();
     error ZeroAddress();
     error FeeTooHigh();
+    error ZeroAmount();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -73,5 +75,52 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
     ///         must have ACL (the user themselves gets it at each mutation).
     function getUserShares(address user) external view returns (euint64) {
         return _userShares[user];
+    }
+
+    // ─── Liquidity — add (synchronous) ─────────────────────────────
+
+    /// @notice Deposits `amount` USDCx from caller's vault balance and
+    ///         credits encrypted LP shares. First deposit bootstraps at
+    ///         1:1; subsequent deposits use the fair ratio
+    ///         `shares = amount × totalShares / totalReserveUsdcx`.
+    /// @dev Amount is plaintext (privacy concession documented in plan).
+    ///      User's SHARE of pool stays encrypted.
+    function addLiquidity(uint64 amount) external {
+        if (amount == 0) revert ZeroAmount();
+
+        // Fair-ratio share math (all plaintext)
+        uint64 sharesToMint;
+        if (totalShares == 0) {
+            sharesToMint = amount;
+        } else {
+            // shares = amount × totalShares / totalReserveUsdcx
+            // Use uint256 for intermediate to avoid overflow; safe since
+            // all inputs fit in uint64.
+            uint256 product = uint256(amount) * uint256(totalShares);
+            sharesToMint = uint64(product / uint256(totalReserveUsdcx));
+        }
+
+        // Update plaintext counters
+        totalShares += sharesToMint;
+        totalReserveUsdcx += amount;
+
+        // Debit user's vault balance, credit AMM's vault balance
+        euint64 eAmount = FHE.asEuint64(amount);
+        FHE.allowTransient(eAmount, address(vault));
+        vault.adjustBalance(msg.sender, eAmount, false); // debit user
+
+        euint64 eAmount2 = FHE.asEuint64(amount); // fresh handle for re-use
+        FHE.allowTransient(eAmount2, address(vault));
+        vault.adjustBalance(address(this), eAmount2, true); // credit AMM
+
+        // Credit user's encrypted share balance
+        euint64 eShares = FHE.asEuint64(sharesToMint);
+        euint64 currentShares = _userShares[msg.sender];
+        euint64 newShares = FHESafeMath.safeAdd(currentShares, eShares);
+        _userShares[msg.sender] = newShares;
+        FHE.allowThis(newShares);
+        FHE.allow(newShares, msg.sender);
+
+        emit LiquidityAdded(msg.sender, amount, sharesToMint);
     }
 }
