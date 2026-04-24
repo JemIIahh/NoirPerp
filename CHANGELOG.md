@@ -428,3 +428,42 @@ the phase-complete tick. Their findings, all addressed in one commit:
   — all interfaces are live + tested.
 - **Ready for Phase 3** (PerpEngine): open/close/liquidate for 3
   markets (BTC/ETH/SOL).
+
+### Phase 1+2 retroactive Tier 1 audit (2026-04-24)
+
+Ran spec-compliance + code-quality reviewer agents on Phases 1 and 2
+before merging. Findings (2 critical, 5 important, several minor) all
+addressed in follow-up commits. See CHANGELOG commits tagged
+`fix(audit):` for details.
+
+**Critical fixes**:
+1. `NoirVault.writePosition` missing `FHE.isSenderAllowed` guards — CLAUDE.md
+   rule #4 violation, real inference-attack vector.
+2. `NoirVault.adjustBalance` took plaintext `uint64` instead of `euint64
+   delta` — spec deviation that would have leaked engine-computed amounts
+   to calldata and blocked Phase 3's PerpEngine.openPosition flow.
+
+**Important fixes**:
+3. `FHESafeMath.safeMul` added. `MarginMath` now routes every `FHE.mul`
+   through it. Prevents silent-wrap in `shouldLiquidate` at
+   `unrealizedLoss > 2^64 / 10_000 ≈ $1.8B USDC` (would have masked
+   liquidation of deeply insolvent positions).
+4. Oracle admin setters (`setStalenessSeconds`, `setDeviationBps`) now
+   emit events (`StalenessChanged`, `DeviationBpsChanged`).
+5. `DecryptQueue.cleanupStale` griefing vector documented (by-design,
+   10x safety margin vs Gateway latency).
+6. `NoirVault.withdraw` silent-zero ERC-7984 footgun documented.
+7. `FHESafeMath.absDiff` select-guard pattern documented (raw `FHE.sub`
+   safety rationale).
+
+**Process fix** (the actual root cause): `PROGRESS.md` now mandates Tier 1
+audit as a phase-completion criterion. Phase 0 had it; Phases 1-2 skipped
+it; result was 2 critical + 5 important findings detected only on
+retroactive review. Going forward every phase must pass Tier 1 before tick.
+
+**Deferred (Phase 9 scope)**:
+- `safeAdd` redundant `asEuint64(MAX_U64)` optimization
+- Oracle ECDSA `sig` verification (msg.sender-as-attestation accepted for MVP)
+- Test strengthening (pause-positive path, over-withdraw token delta check)
+
+**Final Phase 2 test count**: 138 passing.
