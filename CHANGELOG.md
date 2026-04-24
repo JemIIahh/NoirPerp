@@ -330,3 +330,13 @@ the phase-complete tick. Their findings, all addressed in one commit:
   `contracts/test/Compliance.test.ts`.
 - **Added**: `@openzeppelin/merkle-tree` dev dependency for JS-side
   Merkle tree construction in tests.
+- **Added**: `contracts/contracts/services/Oracle.sol` — 2-of-3
+  Chainlink relayer consensus for per-market price feeds (BTC=1,
+  ETH=2, SOL=3). First submission stores pending; second submission
+  from a different relayer within deviation tolerance + staleness
+  window commits. Trivial-encrypts the committed price for FHE ops
+  via `getEncryptedPrice`. 17 unit tests covering access control,
+  quorum state machine (same-relayer, deviation-exceed, stale-pending,
+  new-cycle-after-commit), freshness, encryption, admin rotation.
+  **Files**: `contracts/contracts/services/Oracle.sol`,
+  `contracts/test/Oracle.test.ts`.
