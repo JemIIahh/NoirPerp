@@ -289,3 +289,32 @@ the phase-complete tick. Their findings, all addressed in one commit:
   depend on these libs. Every margin check, PnL calc, and async
   decrypt callback will flow through them.
 - **Ready for Phase 2**: NoirVault, Oracle, Compliance services.
+
+### Phase 2 — Task 1: MockERC7984 test fixture (2026-04-23)
+
+- **Added**: `contracts/contracts/test-harness/MockERC7984.sol` — minimal
+  ERC-7984 token mock for local Hardhat vault tests. Extends OZ's `ERC7984`
+  base (openzeppelin/confidential-contracts v0.4.0). Exposes two mint
+  entry points:
+  - `mint(address, externalEuint64, bytes)` — proof-based mint (exercises
+    the full `FHE.fromExternal` path).
+  - `mintPlaintext(address, uint64)` — trivial-encrypt mint for tests that
+    don't need the proof path.
+  Both are open to any caller (test-only; NOT production-safe).
+  **Why**: Vault tests in Task 5 need a locally deployable ERC-7984 token.
+  On Sepolia the pre-deployed `cUSDCMock @ 0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639`
+  is used instead.
+  **Files**: `contracts/contracts/test-harness/MockERC7984.sol`.
+
+- **OZ API verified** (no deviations from plan template):
+  - Constructor: `ERC7984(string name_, string symbol_, string contractURI_)`
+    — three args as expected; mock passes `""` for contractURI.
+  - Internal mint: `_mint(address to, euint64 amount) internal returns (euint64)`
+    — exact signature assumed by the plan.
+  - `ERC7984` is a concrete (non-abstract) base extending only `ERC165`.
+    No abstract methods to implement.
+  - The plan's template was used verbatim with one cosmetic fix: the
+    NatSpec `@openzeppelin/...` package reference in the dev comment was
+    changed to remove the leading `@` (Solidity's docstring parser
+    interpreted it as an unknown NatSpec tag and threw `DocstringParsingError`).
+    This is a doc-comment-only change; no logic was altered.
