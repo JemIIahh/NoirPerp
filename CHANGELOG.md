@@ -382,3 +382,49 @@ the phase-complete tick. Their findings, all addressed in one commit:
   staleness 90s, deviation 50bps), NoirVault. Template for Phase 3+
   engine deploys.
   **Files**: `contracts/scripts/deploy-local.ts`.
+
+- **Added**: 6 Oracle coverage-gap tests (post-Task-6 review found
+  the plan's Oracle test set missed `transferAdmin` entirely and
+  didn't exercise the engine-facing `getEncryptedPrice` or the edge
+  reverts `BadIndex` / `ZeroAddress` in `rotateRelayer`). Oracle
+  coverage now 100% stmts / 100% funcs / 100% lines / 86.11% branches.
+  **Files**: `contracts/test/Oracle.test.ts`.
+
+- **Plan bug fixed inline**: Task 5's test used `2n ** 48n` as a
+  far-future timestamp for `setOperator`. uint48 max is `2**48 - 1`;
+  passing `2**48` overflows. Subagent corrected to `2n ** 48n - 1n`.
+
+- **Plan test-count undercounting pattern**: Tasks 2, 3, 4, 6 all
+  had actual test counts 1-2 higher than the plan estimated. No
+  tests were skipped; plan author consistently undercounted leaf
+  `it()` blocks. Final Phase 2 test totals: Compliance 16, Oracle
+  23, Vault.Admin 15, Vault.Balance 11, Vault.Positions 9 = 74 new.
+
+### Phase 2 complete ✅ (2026-04-24)
+
+- **3 services + 1 vault live on local mock**:
+  - `services/Compliance.sol` — Merkle allowlist w/ admin-controlled
+    root + per-address revocation (OZ StandardMerkleTree convention)
+  - `services/Oracle.sol` — 2-of-3 Chainlink relayer quorum, deviation
+    tolerance (50bps), staleness window (90s), trivial-encrypts
+    committed price for FHE downstream use
+  - `NoirVault.sol` — sole owner of ciphertext state; encrypted
+    balance mapping + deposit/withdraw (ERC-7984) + engine-gated
+    adjustBalance + position storage + writePosition/closePosition
+  - `test-harness/MockERC7984.sol` — local-test-only ERC-7984 mock
+  - `test-harness/MockEngine.sol` — authorized-engine stand-in for
+    vault mutator tests
+- **Test count**: 131 total passing (57 prior + 74 Phase 2).
+- **Coverage** (via `SOLIDITY_COVERAGE=true npx hardhat coverage`):
+  - Compliance: 100% stmts / 100% branches / 100% funcs / 100% lines
+  - Oracle:     100% stmts /  86.11% branches / 100% funcs / 100% lines
+  - NoirVault:  100% stmts /  90.91% branches / 100% funcs / 100% lines
+  - All ≥ 90% stmts/funcs/lines; all ≥ 80% branches (targets met).
+- **Local deploy verified**: `npx hardhat run scripts/deploy-local.ts`
+  prints 4 addresses cleanly. Script is the template for Phase 3+.
+- **Sepolia deploy**: deferred to Phase 9 (needs funded key + real RPC).
+- **Why**: Phase 3 PerpEngine can now call `vault.writePosition`,
+  `vault.adjustBalance`, `oracle.getEncryptedPrice`, `compliance.verify`
+  — all interfaces are live + tested.
+- **Ready for Phase 3** (PerpEngine): open/close/liquidate for 3
+  markets (BTC/ETH/SOL).
