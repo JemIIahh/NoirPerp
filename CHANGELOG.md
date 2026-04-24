@@ -340,3 +340,13 @@ the phase-complete tick. Their findings, all addressed in one commit:
   new-cycle-after-commit), freshness, encryption, admin rotation.
   **Files**: `contracts/contracts/services/Oracle.sol`,
   `contracts/test/Oracle.test.ts`.
+- **Added**: `contracts/contracts/NoirVault.sol` (Task 4 scaffold —
+  admin + engine authorization + pause). Subsequent tasks add balance
+  ops and position storage. Uses OZ ERC-7984 interface for cUSDC
+  reference (actual token address set at construction; zero-address
+  allowed for admin-only tests). 15 unit tests covering construction,
+  engine register/deregister, pause/unpause, admin transfer, zero-
+  address guards. IERC7984 import path matches plan exactly:
+  `openzeppelin/confidential-contracts/interfaces/IERC7984.sol`.
+  **Files**: `contracts/contracts/NoirVault.sol`,
+  `contracts/test/NoirVault.Admin.test.ts`.
