@@ -1,11 +1,24 @@
 # NoirPerp — Phase Progress
 
-Source of truth for which phase we're in. Tick the checkbox only when:
-1. All tasks in that phase's implementation plan are done
-2. All tests (unit + integration) pass
-3. `CHANGELOG.md` has a phase-completion entry
+Source of truth for which phase we're in. Tick the checkbox only when
+ALL of the following are met:
+
+1. **All tasks** in that phase's implementation plan are done
+2. **All tests** (unit + integration) pass
+3. **Coverage** ≥ 90% stmts/funcs/lines and ≥ 80% branches per new contract
+4. **Tier 1 audit** passed — both reviewers green:
+   - Spec compliance reviewer (built what plan specified, nothing more/less)
+   - Code quality reviewer (no critical/important issues unresolved)
+   - Critical/important findings MUST be fixed before the tick.
+   - Minor findings may be deferred with explicit CHANGELOG notation.
+5. **`CHANGELOG.md`** has a phase-completion entry documenting what
+   shipped, what was deferred, and any spec deviations
+6. **Branch merged** to `master` via fast-forward
 
 Phase N+1 does not start until Phase N is ticked.
+
+Tier 2 audit (Slither + Mythril + OZ security checklist + invariants +
+fuzz + HCU benchmarks + per-contract sign-off) runs once in Phase 9.
 
 ---
 
