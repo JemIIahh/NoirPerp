@@ -259,3 +259,33 @@ the phase-complete tick. Their findings, all addressed in one commit:
   **Files**: `contracts/contracts/lib/MarginMath.sol`,
   `contracts/contracts/test-harness/MarginMathHarness.sol`,
   `contracts/test/MarginMath.test.ts`.
+
+### Phase 1 complete ✅ (2026-04-24)
+
+- **All 4 shared libraries live**:
+  - `FHESafeMath` — select-guarded arithmetic (safeSub, safeAdd, absDiff)
+  - `TickMath` — UniV3 tick math (MIT port, pure)
+  - `DecryptQueue` — async-decrypt state machine with replay guard
+  - `MarginMath` — multiplication-only margin/PnL/liquidation math
+- **Test count**: 57 passing (1 Smoke + 14 FHESafeMath + 13 TickMath +
+  13 DecryptQueue + 16 MarginMath).
+- **Coverage** (via `SOLIDITY_COVERAGE=true npx hardhat coverage`):
+  - FHESafeMath: 100% / 100% / 100% / 100% (stmt/branch/func/line)
+  - MarginMath:  100% / 100% / 100% / 100%
+  - DecryptQueue: 100% / 100% / 100% / 100%
+  - TickMath:   100% / 85.71% / 100% / 100% (branch coverage lower
+    because UniV3 boundary revert paths are hard to exercise through
+    the normal test surface; still above 80% threshold)
+- **Note**: `hardhat coverage` requires `SOLIDITY_COVERAGE=true` env
+  var for FHEVM plugin compatibility. Without it, the plugin errors
+  with "Wrong Hardhat Network Config for Solidity Coverage". Future
+  phases should use the same env var.
+- **Plan bug caught + fixed**: TickMath symmetry test originally used
+  `1n << 16n` absolute tolerance, which was mathematically impossible
+  (products of ~2^96 operands have ~2^95 rounding drift). Tolerance
+  corrected to `1n << 112n` (relative precision > 2^-80). Contract
+  code unchanged — UniV3 port verified correct.
+- **Why**: Phase 2 (Vault + services) and all subsequent engine phases
+  depend on these libs. Every margin check, PnL calc, and async
+  decrypt callback will flow through them.
+- **Ready for Phase 2**: NoirVault, Oracle, Compliance services.

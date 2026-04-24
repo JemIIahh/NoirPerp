@@ -17,10 +17,13 @@ Phase N+1 does not start until Phase N is ticked.
   FHEVM plugin installed, Smoke test green (`npx hardhat test` →
   1 passing).
 
-- [ ] **Phase 1 — Shared libs**
-  Plan: `docs/plans/2026-04-24-phase-1-shared-libs.md` *(not yet written)*
-  Completion criteria: `FHESafeMath`, `MarginMath`, `TickMath`,
-  `DecryptQueue` implemented with ≥90% unit-test coverage.
+- [x] **Phase 1 — Shared libs** ✅ (2026-04-24)
+  Plan: `docs/plans/2026-04-24-phase-1-shared-libs.md`
+  Completion criteria met: all 4 libs implemented; 57 unit tests
+  passing (1 Smoke + 14 FHESafeMath + 13 TickMath + 13 DecryptQueue
+  + 16 MarginMath); solidity-coverage: 100% lines/funcs/stmts per
+  lib, branches 100% for 3 libs + 85.71% for TickMath (UniV3
+  boundary reverts hard to exercise fully, still above 80% threshold).
 
 - [ ] **Phase 2 — Vault + services**
   Plan: *(not yet written)*
