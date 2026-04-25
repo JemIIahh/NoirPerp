@@ -166,6 +166,36 @@ function _onLiquidationDecided(
 | `abi.decode(cleartexts, (bool))` for ebool | **Actual:** `abi.decode(cleartexts, (uint256))` then compare to 0 |
 | `hre.fhevm.awaitDecryptionOracle()` in tests | **Not implemented.** Use `hre.fhevm.publicDecrypt([handle])` which returns the proof bundle directly |
 
+### 5.2.1 Multi-handle public decrypt — cleartext encoding (corrected 2026-04-25)
+
+When a single decrypt request bundles **N handles** (e.g., a batch
+match in DarkpoolEngine), the cleartext blob returned by
+`publicDecrypt(handles)` and passed back to the callback is encoded
+as `abi.encode(uint256, uint256, ...)` — a **flat N-tuple of 32-byte
+words, with no length header**. This is NOT `abi.encode(uint256[])`
+(which would prepend a 32-byte length word).
+
+**Wrong** (reverts or returns garbage):
+```solidity
+uint256[] memory vals = abi.decode(cleartexts, (uint256[])); // ❌
+```
+
+**Right** (assembly word extraction at fixed 32-byte stride):
+```solidity
+require(cleartexts.length == n * 32, "length mismatch");
+uint256[] memory vals = new uint256[](n);
+for (uint256 i = 0; i < n; i++) {
+    uint256 word;
+    uint256 offset = 32 + i * 32; // skip the bytes-memory length word
+    assembly { word := mload(add(cleartexts, offset)) }
+    vals[i] = word;
+}
+```
+
+Verified in mock against `KMSVerifier.abiEncodeClearValues`. Production
+KMS follows the same convention. See
+`contracts/contracts/engines/DarkpoolEngine.sol::_decodeBatch`.
+
 ### 5.3 reqId generation
 
 Since there's no Gateway assigning a requestId, the contract generates one locally:

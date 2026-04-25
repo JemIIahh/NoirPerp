@@ -91,8 +91,23 @@ fuzz + HCU benchmarks + per-contract sign-off) runs once in Phase 9.
   Plan-time stack-too-deep mitigated via `PlaceLimitInputs` struct param
   (avoided viaIR which would have broken 18 other tests).
 
-- [ ] **Phase 6 — DarkpoolEngine**
-  Plan: *(not yet written)*
+- [x] **Phase 6 — DarkpoolEngine** ✅ (2026-04-25)
+  Plan: `docs/plans/2026-04-25-phase-6-darkpool-engine.md`
+  Completion criteria met: DarkpoolEngine live with `submitOrder` /
+  `cancelOrder` (encrypted size + collateral + limitPrice; collateral
+  escrow with refund on cancel) + async batch match
+  (`requestBatchMatch` + `_onBatchDecided`). Single Gateway decrypt
+  resolves N orders at once via flat-tuple cleartext encoding
+  (`abi.encode(uint256, uint256, ...)`, decoded via assembly word
+  extraction — fhe-primitives lesson for multi-handle public decrypt).
+  Settles fillable orders via PerpEngine executor pattern (Phase 5
+  carry-forward). Tier 1 audit passed: 1 important (cross-market batch
+  silent mis-pricing) + 3 minor/observation findings fixed pre-merge.
+  Coverage on DarkpoolEngine: 100% stmts / 86.21% branches / 100%
+  funcs / 100% lines. 287 tests passing total (257 prior + 30 new: 13
+  Admin + 9 Submit + 8 BatchMatch). 4 documented spec deviations:
+  no volume matching, no partial fills, oracle clearing price (per
+  spec §11), settle via PerpEngine executor.
 
 - [ ] **Phase 7 — Off-chain services (bot, oracle-relayer, compliance-backend)**
   Plan: *(not yet written)*

@@ -14,6 +14,32 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-25
 
+### Phase 6 complete ✅ (2026-04-25)
+
+- **DarkpoolEngine live** on local mock:
+  - `submitOrder(SubmitOrderInputs, marketId, isLong, complianceProof)`
+    — locks collateral as escrow
+  - `cancelOrder(orderId)` — refunds escrow
+  - `requestBatchMatch(uint256[])` — async, single Gateway decrypt for
+    N orders (~10 max per HCU budget)
+  - `_onBatchDecided(...)` — replay-guarded callback; settles fillable
+    orders via `perp.openPositionAsExecutor`, refunds non-fillable
+- **Spec deviations** (documented):
+  1. No volume matching across counterparties (each order independent)
+  2. No partial fills (binary fill per order)
+  3. Clearing price = oracle price (per spec §11 deferred decision)
+  4. Settlement via PerpEngine executor (perp position open)
+- **Test count**: 287 total (257 prior + 30 new).
+- **Coverage**: DarkpoolEngine 100% stmts / 86.21% branches / 100%
+  funcs / 100% lines.
+- **Tier 1 audit**: passed — 1 important (cross-market batch
+  silent mis-pricing) + 3 minor/observation findings fixed pre-merge.
+- **Key lesson**: multi-handle public decrypt encodes cleartexts as
+  `abi.encode(uint256, uint256, ...)` flat tuple, NOT
+  `abi.encode(uint256[])`. Decoded via assembly word extraction.
+- **Ready for Phase 7** (off-chain services: bot, oracle relayer,
+  compliance backend).
+
 ### Phase 6 — DarkpoolEngine (in progress)
 
 - **Added**: `contracts/contracts/engines/DarkpoolEngine.sol` (Task 1
