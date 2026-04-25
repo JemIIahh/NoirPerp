@@ -49,6 +49,19 @@ solved design decisions; give future agents full context.
   **Files**: `bot/package.json`, `bot/tsconfig.json`, `bot/.env.example`, `bot/.gitignore`,
   `bot/src/config.ts`, `bot/src/state.ts`, `bot/src/clients.ts`, `bot/test/state.test.ts`.
 
+- **Added**: `bot/src/watchers/liquidation.ts` + `bot/test/liquidation.test.ts` — Task 8 of Phase 7 plan.
+  `subscribeLiquidation(vaultRO, perpRO, tracked, logger)` subscribes to three on-chain events:
+  - `vaultRO.on("PositionOpened", ...)` → `tracked.add(positionId)` (position is live; uses NoirVault per ABI correction)
+  - `perpRO.on("Liquidated", ...)` → `tracked.remove(positionId)` (position gone)
+  - `perpRO.on("LiquidationChecked", ...)` → keeps in tracked, logs "kept" (position survived check, keep probing)
+  Returns an unsubscribe function that removes all three listeners.
+  `runLiquidationTick(perpRW, tracked, logger)` iterates `tracked.list()`, calls
+  `perpRW.requestLiquidation(positionId)` + `await tx.wait()` per position, with per-call
+  try/catch that logs the error and continues to the next position.
+  3 vitest tests added (calls for each tracked id / does nothing when empty / logs and continues on failure).
+  All 8 bot tests pass.
+  **Files**: `bot/src/watchers/liquidation.ts`, `bot/test/liquidation.test.ts`, `CHANGELOG.md`.
+
 - **Modified**: `contracts/scripts/deploy-local.ts` — writes
   `contracts/deployments/local.json` after deploy. Off-chain services
   (oracle-relayer, compliance-backend, bot) read this file to get
