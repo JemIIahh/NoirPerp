@@ -43,14 +43,21 @@ Simplifies to: `useGe = (TP && long) || (SL && short) || (LIMIT && short)`. The 
 - `cancelOrder` (Limit type): refund — debit LimitEngine + credit user
 - `_onTriggerDecided` (Limit type): refund LimitEngine → user, THEN call `perp.openPositionAsExecutor` which debits user normally for the position open. This way perp's existing margin/silent-zero logic handles trigger-time failure cleanly (e.g., if oracle price made the position over-leveraged at trigger, position is silently zeroed and user keeps the refunded collateral).
 
-**PerpEngine modifications (Task 1)**:
-- Extract `_computeFinals(size, collateral, ePrice, owner)` from existing flow (currently uses `msg.sender` — refactor to take `owner` as arg)
-- Extract `_settle` similarly (already exists in current code)
+**PerpEngine modifications (Task 1) — VERIFIED against current code**:
+
+Current PerpEngine.sol structure (verified by reading the file):
+- `_computeFinals(euint64 size, euint64 collateral, uint64 price)` exists at line 139. Takes **plaintext price** (encrypts internally). Uses `msg.sender` to read user balance via `vault.allowBalanceAccess(msg.sender)` at line 145.
+- `_settle(address user, euint64 finalSize, euint64 finalCollateral, uint64 price, bool isLong, uint8 marketId)` at line 157 — **already takes `user` as parameter**. No refactor needed for `_settle`.
+- `closePosition(uint256 positionId)` body at lines 292-324 is **inlined — no `_executeClose` helper exists**. Extraction is REQUIRED for `closePositionAsExecutor`.
+
+Required changes:
+- Modify `_computeFinals` signature: add `address owner` parameter (4 args total). Replace the hardcoded `msg.sender` with `owner`. Existing `openPosition` caller passes `msg.sender`.
+- Extract `_executeClose(NoirVault.Position memory p, uint64 price)` from the body of `closePosition` (everything from the oracle freshness check onwards). Existing `closePosition` becomes: ownership guard + extract → call `_executeClose(p, price)`.
 - New `mapping(address => bool) public authorizedExecutors`
 - New `setExecutor(address, bool)` admin function
-- New `openPositionAsExecutor(owner, euint64 size, euint64 collateral, isLong, marketId)` — bypasses external-input parsing + compliance check (LimitEngine verified at place-time)
-- New `closePositionAsExecutor(positionId)` — bypasses owner check
-- Existing `openPosition` and `closePosition` continue to work via the same internal helpers (Phase 3 tests must remain green)
+- New `openPositionAsExecutor(owner, euint64 size, euint64 collateral, isLong, marketId)` — calls `_computeFinals(size, collateral, price, owner)` then `_settle(owner, finalSize, finalCollateral, price, isLong, marketId)`. Skips compliance (LimitEngine verifies at place-time).
+- New `closePositionAsExecutor(positionId)` — bypasses owner check; calls `_executeClose(p, price)`.
+- Phase 3 tests must remain green (verify after refactor).
 
 ---
 
@@ -371,15 +378,105 @@ In the admin section, after `setLiquidationPool`, add:
     }
 ```
 
-**4e — Refactor `_computeFinals` to take owner as parameter** (if it currently uses `msg.sender`):
+**4e — Refactor `_computeFinals` to take `owner` parameter**:
 
-Find the existing `_computeFinals` internal helper. If it reads `vault.allowBalanceAccess(msg.sender)`, change the signature to add `address owner` and replace `msg.sender` references with `owner`. Update the existing `openPosition` call site to pass `msg.sender`.
+Current signature (line 139-153):
+```solidity
+function _computeFinals(
+    euint64 size,
+    euint64 collateral,
+    uint64 price
+) internal returns (euint64 finalSize, euint64 finalCollateral) {
+    euint64 ePrice = FHE.asEuint64(price);
+    euint64 balance = vault.allowBalanceAccess(msg.sender);  // ← hardcoded
+    ...
+}
+```
 
-If the existing structure is different (e.g., the logic is inlined in `openPosition`), extract it into `_computeFinals(euint64 size, euint64 collateral, euint64 ePrice, address owner) internal returns (euint64 finalSize, euint64 finalCollateral)`.
+Change to:
+```solidity
+function _computeFinals(
+    euint64 size,
+    euint64 collateral,
+    uint64 price,
+    address owner       // ← NEW parameter
+) internal returns (euint64 finalSize, euint64 finalCollateral) {
+    euint64 ePrice = FHE.asEuint64(price);
+    euint64 balance = vault.allowBalanceAccess(owner);  // ← owner not msg.sender
+    // ... rest unchanged
+}
+```
 
-**4f — Refactor `_settle` similarly** if it uses `msg.sender`. Should become `_settle(address owner, euint64 finalSize, euint64 finalCollateral, euint64 ePrice, bool isLong, uint8 marketId)` returning `uint256 positionId`.
+**4f — Update existing `openPosition` to pass `msg.sender`**:
 
-**4g — Update existing `openPosition`** to call the refactored helpers with `msg.sender`. Should be 2 line changes.
+At line 131, change:
+```solidity
+(euint64 finalSize, euint64 finalCollateral) = _computeFinals(size, collateral, price);
+```
+to:
+```solidity
+(euint64 finalSize, euint64 finalCollateral) = _computeFinals(size, collateral, price, msg.sender);
+```
+
+Note: `_settle` at line 157 already takes `address user` as its first parameter — **no `_settle` refactor needed**.
+
+**4g — Extract `_executeClose` helper from inlined `closePosition`**:
+
+Current `closePosition` body at lines 292-324 is inlined. Extract into a new internal helper that takes `positionId` as a parameter (needed for `vault.closePosition(positionId)` at the end).
+
+Replace the existing `closePosition` body with:
+
+```solidity
+function closePosition(uint256 positionId) external whenNotPaused {
+    // Fetch position with transient ACL on each ciphertext field
+    NoirVault.Position memory p = vault.allowPositionAccess(positionId);
+
+    // Ownership guard for direct user calls
+    if (p.owner != msg.sender) revert NotPositionOwner();
+    if (!p.active) revert PositionNotActive();
+
+    // Oracle freshness
+    (uint64 price, bool fresh) = oracle.getPrice(p.marketId);
+    if (!fresh) revert OraclePriceStale();
+
+    _executeClose(positionId, p, price);
+}
+```
+
+Add the new internal helper below it:
+
+```solidity
+/// @dev Internal close logic: assumes p.active was already checked +
+///      caller-authorization handled by the wrapper. Computes PnL,
+///      credits user balance, and marks position closed in vault.
+function _executeClose(
+    uint256 positionId,
+    NoirVault.Position memory p,
+    uint64 price
+) internal {
+    euint64 ePrice = FHE.asEuint64(price);
+
+    // Compute profit + loss branches (both non-negative)
+    euint64 profit;
+    euint64 loss;
+    if (p.isLong) {
+        (profit, loss) = MarginMath.pnlLong(p.size, p.entryPrice, ePrice);
+    } else {
+        (profit, loss) = MarginMath.pnlShort(p.size, p.entryPrice, ePrice);
+    }
+
+    // Payout = safeAdd(safeSub(collateral, loss), profit). Saturating.
+    euint64 collMinusLoss = FHESafeMath.safeSub(p.collateral, loss);
+    euint64 payout = FHESafeMath.safeAdd(collMinusLoss, profit);
+
+    // Credit user's vault balance
+    FHE.allowTransient(payout, address(vault));
+    vault.adjustBalance(p.owner, payout, true);
+
+    // Mark position closed (vault emits PositionClosed canonically)
+    vault.closePosition(positionId);
+}
+```
 
 **4h — Add `openPositionAsExecutor`**:
 
@@ -405,9 +502,10 @@ After existing `openPosition`, add:
         (uint64 price, bool fresh) = oracle.getPrice(marketId);
         if (!fresh) revert OraclePriceStale();
 
-        euint64 ePrice = FHE.asEuint64(price);
-        (euint64 finalSize, euint64 finalCollateral) = _computeFinals(size, collateral, ePrice, owner);
-        positionId = _settle(owner, finalSize, finalCollateral, ePrice, isLong, marketId);
+        // Pass plaintext `price` to internal helpers — they trivially-encrypt
+        // internally. Matches existing _computeFinals + _settle signatures.
+        (euint64 finalSize, euint64 finalCollateral) = _computeFinals(size, collateral, price, owner);
+        positionId = _settle(owner, finalSize, finalCollateral, price, isLong, marketId);
     }
 ```
 
@@ -425,15 +523,10 @@ After existing `closePosition`, add:
 
         (uint64 price, bool fresh) = oracle.getPrice(p.marketId);
         if (!fresh) revert OraclePriceStale();
-        euint64 ePrice = FHE.asEuint64(price);
 
-        // Same close logic as `closePosition`, just without the
-        // `msg.sender == p.owner` guard.
-        _executeClose(p, ePrice);
+        _executeClose(positionId, p, price);
     }
 ```
-
-If existing `closePosition` has a `_executeClose` helper, this works directly. If close logic is inlined, extract it into `_executeClose(NoirVault.Position memory p, euint64 ePrice) internal` and update both callers.
 
 - [ ] **Step 5: Compile + run executor tests**
 
@@ -1112,6 +1205,10 @@ Append before closing `}`:
         FHE.allowThis(triggerPrice);
 
         orderId = nextOrderId++;
+        // Trivial-encrypt zero ciphertexts for unused fields (TP/SL don't
+        // use size/collateral). FHE.asEuint64(0) is safer than euint64.wrap(0)
+        // — explicit type, well-supported, 32 HCU is negligible.
+        euint64 zeroCt = FHE.asEuint64(0);
         _orders[orderId] = LimitOrder({
             owner: msg.sender,
             orderType: orderType,
@@ -1120,8 +1217,8 @@ Append before closing `}`:
             active: true,
             positionId: positionId,
             triggerPrice: triggerPrice,
-            size: euint64.wrap(0),         // unused for TP/SL
-            collateral: euint64.wrap(0)    // unused for TP/SL
+            size: zeroCt,         // unused for TP/SL
+            collateral: zeroCt    // unused for TP/SL
         });
 
         emit OrderPlaced(orderId, msg.sender, orderType, p.marketId);
