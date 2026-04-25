@@ -59,6 +59,21 @@ solved design decisions; give future agents full context.
   integration tests must run inside the hardhat runtime via
   `contracts/test/*.ts` files.
 
+- **Added**: `compliance-backend/` scaffold + `AllowlistTree` Merkle
+  builder backed by `data/allowlist.json`. Reuses
+  `@openzeppelin/merkle-tree` (same as contracts' tests, so proofs
+  verified by the same `StandardMerkleTree` algorithm). 6 vitest tests
+  all passing. Empty allowlist returns `ZeroHash` root (matches on-chain
+  Compliance contract "deny everyone" semantics). All addresses
+  normalized to checksum form via `getAddress` for dedup. `add` is
+  idempotent; `proof` for unknown address returns `allowlisted: false`
+  without throwing.
+  **Files**: `compliance-backend/package.json`,
+  `compliance-backend/tsconfig.json`, `compliance-backend/.env.example`,
+  `compliance-backend/.gitignore`, `compliance-backend/data/allowlist.json`,
+  `compliance-backend/src/config.ts`, `compliance-backend/src/tree.ts`,
+  `compliance-backend/test/tree.test.ts`.
+
 ### Phase 6 complete ✅ (2026-04-25)
 
 - **DarkpoolEngine live** on local mock:
