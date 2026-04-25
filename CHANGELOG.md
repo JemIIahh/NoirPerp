@@ -84,6 +84,53 @@ Test results after all fixes:
 - contracts: 288 passing (unchanged)
 - All three packages build cleanly with `tsc` (zero errors).
 
+### Phase 7 complete ✅ (2026-04-25)
+
+- **Three off-chain services live** (local mock):
+  - `oracle-relayer/` — 2-of-3 Chainlink relayer service (A+B active,
+    C offline). Tick loop submits BTC/ETH/SOL prices.
+  - `compliance-backend/` — Express + Merkle allowlist API
+    (`/health`, `/proof/:address`, `/admin/{add,remove}` gated by
+    `x-api-key`). Reuses `@openzeppelin/merkle-tree` so off-chain
+    algorithm matches on-chain verifier.
+  - `bot/` — orchestrator with 4 watchers in one Node process:
+    liquidation (via NoirVault.PositionOpened + PerpEngine.Liquidated
+    / LiquidationChecked), trigger (LimitEngine OrderPlaced /
+    Triggered / TriggerNotMet / OrderCancelled), batch
+    (DarkpoolEngine OrderSubmitted / BatchSettled / OrderCancelled),
+    decrypt-relay (4 engines: Liquidation/Trigger/Withdraw/BatchMatch
+    Requested events → publicDecrypt → engine._onXDecided callback).
+    Replay-on-startup (queries PositionClosed too, post-audit fix).
+    Busy-flag tick loop. SIGTERM cleanup in both bot + oracle-relayer.
+- **Spec deviations** (documented):
+  1. KYC provider stubbed (JSON file allowlist; real KYC post-launch)
+  2. Single-process bot (no Redis/queue)
+  3. 2-of-3 quorum from A+B (C offline; rotation drill in Phase 9)
+  4. No $ZAMA fee handling (testnet free tier)
+  5. Task 3 spawn-based integration test skipped — FHEVM hardhat
+     plugin requires in-process precompile setup; standalone
+     `npx hardhat node` + `--network localhost` deploy is
+     fundamentally incompatible. Coverage via Phase 2 Oracle tests.
+  6. Task 6 spawn-based on-chain proof verification skipped — same
+     root cause. Coverage via Phase 2 Compliance tests which already
+     pin the off-chain Merkle algorithm.
+- **Tier 1 audit**: passed — 1 spec compliance Important finding
+  (replay missing PositionClosed) + 7 code quality findings
+  (4 Important: pino-http registered after routes, replay-to-subscribe
+  race window undocumented, oracle-relayer SIGTERM missing, Logger
+  type drift; 3 Minor + 1 Observation). All 8 fixed pre-merge.
+- **Test counts**: 326 total = 38 off-chain (oracle 6 + compliance 14
+  + bot 18) + 288 contracts (287 prior + 1 new
+  `Bot.Integration.test.ts`).
+- **Cross-package CJS/ESM bridge**: `contracts/` (CJS) imports from
+  `bot/dist/` (ESM) via dynamic `import()` with `path.resolve` for
+  absolute paths. Pattern documented in `Bot.Integration.test.ts`.
+- **Key operational lesson**: any "spawn hardhat node + deploy
+  externally" pattern won't work for this project. Off-chain
+  integration tests must run inside the hardhat runtime via
+  `contracts/test/*.ts`.
+- **Ready for Phase 8** (frontend).
+
 ### Phase 7 — Off-chain services (in progress)
 
 - **Added**: `contracts/test/Bot.Integration.test.ts` — Task 13 of Phase 7 plan.

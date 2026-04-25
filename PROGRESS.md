@@ -109,8 +109,35 @@ fuzz + HCU benchmarks + per-contract sign-off) runs once in Phase 9.
   no volume matching, no partial fills, oracle clearing price (per
   spec §11), settle via PerpEngine executor.
 
-- [ ] **Phase 7 — Off-chain services (bot, oracle-relayer, compliance-backend)**
-  Plan: *(not yet written)*
+- [x] **Phase 7 — Off-chain services** ✅ (2026-04-25)
+  Plan: `docs/plans/2026-04-25-phase-7-offchain-services.md`
+  Completion criteria met: 3 services live (oracle-relayer,
+  compliance-backend, bot). Oracle-relayer: 2-of-3 quorum (A+B
+  in-process, C offline) submits BTC/ETH/SOL prices on a tick (B uses
+  `t+1` timestamp). Compliance-backend: Express API for Merkle proofs
+  + admin add/remove gated by `x-api-key` header; reuses
+  `@openzeppelin/merkle-tree` so off-chain algorithm matches on-chain
+  `Compliance.verify` (proven by Phase 2's existing 16 Compliance
+  tests). Bot: 4 watchers (liquidation / trigger / batch / decrypt-
+  relay) in one Node process with replay-on-startup + busy-flag tick
+  loop + SIGTERM cleanup. Tier 1 audit passed (1 Important spec finding
+  + 7 quality findings — 4 Important, 3 Minor, 1 Observation — all
+  fixed pre-merge). 6 documented spec deviations: KYC stubbed
+  (allowlist.json), single-process bot (no Redis), 2-of-3 quorum from
+  A+B (C offline), no $ZAMA fee handling, plus 2 in-flight skips of
+  spawn-based integration tests (Tasks 3+6) due to FHEVM hardhat
+  plugin's incompatibility with `npx hardhat node` standalone — the
+  plugin provisions mock precompiles via in-process hooks; alternative
+  coverage via existing Phase 2 Oracle/Compliance tests + Task 13
+  cross-service smoke. Test count: 326 total = 38 off-chain (oracle 6
+  + compliance 14 + bot 18) + 288 contracts (287 prior + 1 new
+  `Bot.Integration.test.ts`). Cross-package CJS/ESM bridge via dynamic
+  `import()` proven in `contracts/test/Bot.Integration.test.ts` which
+  builds bot first then imports `bot/dist/watchers/liquidation.js`
+  to drive a real liquidation cycle via FHEVM mock. Key lesson
+  recorded for Phase 8/9: any "spawn hardhat node + deploy externally"
+  pattern won't work for this project — off-chain integration must run
+  inside hardhat runtime.
 
 - [ ] **Phase 8 — Frontend**
   Plan: *(not yet written)*
