@@ -32,6 +32,22 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/contracts/engines/DarkpoolEngine.sol`,
   `contracts/test/DarkpoolEngine.Submit.test.ts`.
 
+- **Added**: `DarkpoolEngine.requestBatchMatch` + `_onBatchDecided`
+  async batch-match flow. Phase 1: per-order `ebool wouldFill`
+  computed against oracle price (long: le, short: ge), all marked
+  publicly decryptable, handles emitted. Phase 2: callback verifies
+  KMS sigs, dequeues, decodes N booleans from cleartexts, settles
+  each (refund escrow + optionally `perp.openPositionAsExecutor` if
+  fillable). Single decrypt round-trip resolves entire batch.
+  7 unit tests including mixed-fill batch.
+  **Cleartext decode note**: FHEVM mock returns `abi.encode(uint256,
+  uint256, ...)` (flat N-tuple, NOT `uint256[]`). Decoded via assembly
+  word-extraction loop (32 bytes per element at offset i*32 from data
+  start). Extracted `_dispatchBatch` helper to avoid stack-too-deep
+  in `_onBatchDecided`.
+  **Files**: `contracts/contracts/engines/DarkpoolEngine.sol`,
+  `contracts/test/DarkpoolEngine.BatchMatch.test.ts`.
+
 ---
 
 ## 2026-04-23

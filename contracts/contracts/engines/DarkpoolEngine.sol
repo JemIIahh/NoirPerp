@@ -44,6 +44,8 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
     event ComplianceSet(address indexed newCompliance);
     event OrderSubmitted(uint256 indexed orderId, address indexed owner, uint8 marketId);
     event OrderCancelled(uint256 indexed orderId, address indexed owner);
+    event BatchMatchRequested(uint256 indexed requestId, address indexed keeper, uint256[] orderIds, bytes32[] handles);
+    event BatchSettled(uint256 indexed requestId, uint256[] orderIds, uint256[] shouldFires);
 
     error NotAdmin();
     error ZeroAddress();
@@ -53,6 +55,10 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
     error NotAllowed();
     error NotOrderOwner();
     error OrderNotActive();
+    error OracleNotSet();
+    error PerpNotSet();
+    error OraclePriceStale();
+    error EmptyBatch();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -203,5 +209,123 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
             collateral: collateral,
             limitPrice: limitPrice
         });
+    }
+
+    // ─── Async batch match ────────────────────────────────────────
+
+    /// @notice Bot-callable. For each orderId, computes whether the order
+    ///         should fill at current oracle price, marks each ebool
+    ///         publicly decryptable, and emits the handle list for relayer
+    ///         pickup.
+    function requestBatchMatch(uint256[] calldata orderIds) external returns (uint256 requestId) {
+        if (oracle == address(0)) revert OracleNotSet();
+        if (perp == address(0)) revert PerpNotSet();
+        uint256 n = orderIds.length;
+        if (n == 0) revert EmptyBatch();
+
+        (uint64 price, bool fresh) = Oracle(oracle).getPrice(_marketIdOf(orderIds[0]));
+        if (!fresh) revert OraclePriceStale();
+        // Note: we use marketId of the first order; in MVP all orders in a
+        // batch must share a market. Cross-market batches deferred to v2.
+
+        euint64 ePrice = FHE.asEuint64(price);
+
+        bytes32[] memory handles = new bytes32[](n);
+        for (uint256 i = 0; i < n; i++) {
+            DarkOrder storage order = _orders[orderIds[i]];
+            if (!order.active) revert OrderNotActive();
+
+            // Per-order fill check: long → oracle <= limit; short → oracle >= limit
+            ebool wouldFill = order.isLong
+                ? FHE.le(ePrice, order.limitPrice)
+                : FHE.ge(ePrice, order.limitPrice);
+
+            FHE.makePubliclyDecryptable(wouldFill);
+            handles[i] = FHE.toBytes32(wouldFill);
+        }
+
+        requestId = uint256(keccak256(abi.encode(orderIds, block.number, block.timestamp, msg.sender)));
+        bytes memory ctx = abi.encode(orderIds);
+        _enqueue(requestId, msg.sender, 0, ctx);
+
+        emit BatchMatchRequested(requestId, msg.sender, orderIds, handles);
+    }
+
+    /// @notice Gateway-relayed callback. Verifies KMS sigs, dequeues
+    ///         (replay guard) BEFORE external calls, then settles all
+    ///         orders in the batch.
+    function _onBatchDecided(
+        uint256 requestId,
+        bytes32[] memory handlesList,
+        bytes memory cleartexts,
+        bytes memory decryptionProof
+    ) external {
+        FHE.checkSignatures(handlesList, cleartexts, decryptionProof);
+        PendingDecrypt memory ctx = _dequeue(requestId);
+
+        uint256[] memory orderIds = abi.decode(ctx.context, (uint256[]));
+        uint256[] memory shouldFires = _decodeBatch(cleartexts, orderIds.length);
+
+        _dispatchBatch(orderIds, shouldFires, requestId);
+    }
+
+    /// @dev Extracted to avoid stack-too-deep in _onBatchDecided.
+    function _dispatchBatch(
+        uint256[] memory orderIds,
+        uint256[] memory shouldFires,
+        uint256 requestId
+    ) internal {
+        for (uint256 i = 0; i < orderIds.length; i++) {
+            _settleOne(orderIds[i], shouldFires[i] != 0);
+        }
+        emit BatchSettled(requestId, orderIds, shouldFires);
+    }
+
+    /// @dev Decodes N booleans from the KMS cleartext blob.
+    ///      The mock Gateway (and production KMSVerifier) returns batched
+    ///      ebool decrypts as `abi.encode(uint256, uint256, ...)` — a flat
+    ///      tuple of N uint256 values (NOT a uint256[] with length header).
+    ///      Each element occupies exactly 32 bytes at offset i*32 within the
+    ///      data region. We extract via assembly to avoid the ABI-decode
+    ///      tuple-vs-array ambiguity.
+    function _decodeBatch(bytes memory cleartexts, uint256 expectedLen)
+        internal pure returns (uint256[] memory shouldFires)
+    {
+        require(cleartexts.length == expectedLen * 32, "DarkpoolEngine: cleartext length mismatch");
+        shouldFires = new uint256[](expectedLen);
+        for (uint256 i = 0; i < expectedLen; i++) {
+            uint256 val;
+            uint256 byteOffset = 32 + i * 32; // skip the `bytes` length word
+            assembly {
+                val := mload(add(cleartexts, byteOffset))
+            }
+            shouldFires[i] = val;
+        }
+    }
+
+    /// @dev Settles a single order from the batch.
+    function _settleOne(uint256 orderId, bool fire) internal {
+        DarkOrder storage order = _orders[orderId];
+        order.active = false;
+
+        // Always refund escrow first — Perp will re-debit user normally if order fires
+        _refundCollateral(order);
+
+        if (!fire) {
+            return;
+        }
+
+        FHE.allowTransient(order.size, perp);
+        FHE.allowTransient(order.collateral, perp);
+        PerpEngine(perp).openPositionAsExecutor(
+            order.owner, order.size, order.collateral, order.isLong, order.marketId
+        );
+    }
+
+    /// @dev Returns marketId of an order — small read helper to keep the
+    ///      ergonomics of `requestBatchMatch` clean (avoids inlining storage
+    ///      reads in arg lists).
+    function _marketIdOf(uint256 orderId) internal view returns (uint8) {
+        return _orders[orderId].marketId;
     }
 }
