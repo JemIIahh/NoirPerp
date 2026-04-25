@@ -59,6 +59,8 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
     error PerpNotSet();
     error OraclePriceStale();
     error EmptyBatch();
+    error CrossMarketBatch();
+    error CleartextLengthMismatch();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -217,16 +219,20 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
     ///         should fill at current oracle price, marks each ebool
     ///         publicly decryptable, and emits the handle list for relayer
     ///         pickup.
+    /// @dev HCU budget: each order in a batch costs ~152k HCU for the
+    ///      le/ge fill check plus ~337k HCU for the safeAdd-based escrow
+    ///      refund in the callback (~489k per order total). The 5M
+    ///      sequential limit caps the safe batch size at ~10 orders.
+    ///      Keepers MUST cap orderIds.length at 10 to avoid HCU exhaustion.
     function requestBatchMatch(uint256[] calldata orderIds) external returns (uint256 requestId) {
         if (oracle == address(0)) revert OracleNotSet();
         if (perp == address(0)) revert PerpNotSet();
         uint256 n = orderIds.length;
         if (n == 0) revert EmptyBatch();
 
-        (uint64 price, bool fresh) = Oracle(oracle).getPrice(_marketIdOf(orderIds[0]));
+        uint8 batchMarket = _marketIdOf(orderIds[0]);
+        (uint64 price, bool fresh) = Oracle(oracle).getPrice(batchMarket);
         if (!fresh) revert OraclePriceStale();
-        // Note: we use marketId of the first order; in MVP all orders in a
-        // batch must share a market. Cross-market batches deferred to v2.
 
         euint64 ePrice = FHE.asEuint64(price);
 
@@ -234,6 +240,10 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
         for (uint256 i = 0; i < n; i++) {
             DarkOrder storage order = _orders[orderIds[i]];
             if (!order.active) revert OrderNotActive();
+            // Reject heterogeneous batches — the oracle price was fetched
+            // for batchMarket only; orders from other markets would settle
+            // against the wrong price.
+            if (order.marketId != batchMarket) revert CrossMarketBatch();
 
             // Per-order fill check: long → oracle <= limit; short → oracle >= limit
             ebool wouldFill = order.isLong
@@ -291,7 +301,7 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
     function _decodeBatch(bytes memory cleartexts, uint256 expectedLen)
         internal pure returns (uint256[] memory shouldFires)
     {
-        require(cleartexts.length == expectedLen * 32, "DarkpoolEngine: cleartext length mismatch");
+        if (cleartexts.length != expectedLen * 32) revert CleartextLengthMismatch();
         shouldFires = new uint256[](expectedLen);
         for (uint256 i = 0; i < expectedLen; i++) {
             uint256 val;

@@ -207,6 +207,17 @@ describe("DarkpoolEngine — batch match (async)", () => {
       expect(o0.active).to.equal(false);
       expect(o1.active).to.equal(false);
       expect(o2.active).to.equal(false);
+
+      // Escrow accounting (the most critical user-safety invariant):
+      //   start: 20_000
+      //   after 3 submits @ 1000 each: 17_000
+      //   after batch settle:
+      //     all 3 escrows refunded:   +3000 → 20_000
+      //     2 perp opens (id0, id2): -2000 → 18_000
+      const aliceBal = await decrypt(
+        await vault.getBalance(alice.address), await vault.getAddress(), alice,
+      );
+      expect(aliceBal).to.equal(18_000n);
     });
   });
 
@@ -237,6 +248,23 @@ describe("DarkpoolEngine — batch match (async)", () => {
       await fresh.waitForDeployment();
       await expect(fresh.connect(keeper).requestBatchMatch([0]))
         .to.be.revertedWithCustomError(fresh, "OracleNotSet");
+    });
+
+    it("requestBatchMatch reverts on cross-market batch", async () => {
+      // Order in ETH market (oracle has price)
+      const idEth = await submitOrder(5n, 1_000n, 3_100n, true);
+      // Order in BTC market — submit happens (marketId=1 valid), but
+      // requestBatchMatch must reject the heterogeneous batch.
+      const inputs = await buildInputs(
+        await dark.getAddress(), alice.address, 5n, 1_000n, 3_100n,
+      );
+      const tx = await dark.connect(alice).submitOrder(inputs, 1, true, aliceProof);
+      const r = await tx.wait();
+      const ev = r!.logs.find((l: any) => l.fragment?.name === "OrderSubmitted") as any;
+      const idBtc = ev.args.orderId;
+
+      await expect(dark.connect(keeper).requestBatchMatch([idEth, idBtc]))
+        .to.be.revertedWithCustomError(dark, "CrossMarketBatch");
     });
   });
 });

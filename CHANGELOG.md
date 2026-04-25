@@ -53,6 +53,27 @@ solved design decisions; give future agents full context.
   executor on PerpEngine. Banner bumped to Phase 6.
   **Files**: `contracts/scripts/deploy-local.ts`.
 
+- **Fixed (Tier 1 audit)**: 4 findings addressed before phase tick:
+  1. **Cross-market batch correctness bug** (Important): keeper could
+     submit a batch with orders from different markets and only the
+     first order's market price was used — silently mis-settling other
+     markets' orders. Added `CrossMarketBatch` error + per-order
+     `marketId == batchMarket` check inside `requestBatchMatch` loop.
+     New unit test: `requestBatchMatch reverts on cross-market batch`.
+  2. **`require`-with-string in `_decodeBatch`** (Minor): replaced with
+     custom error `CleartextLengthMismatch()` for consistency + gas.
+  3. **Mixed-batch test missing escrow-refund balance assertion**
+     (Minor, but most critical user-safety invariant): added explicit
+     `decrypt(vault.getBalance(alice))` assertion after settlement
+     verifying 3 escrows refunded + 2 perp opens debited (final 18_000n
+     vs 20_000n initial deposit).
+  4. **Max batch size undocumented** (Observation): added NatSpec
+     comment on `requestBatchMatch` documenting ~10 orders cap from
+     5M HCU sequential limit (~489k HCU/order: 152k le/ge + 337k
+     safeAdd refund).
+  **Files**: `contracts/contracts/engines/DarkpoolEngine.sol`,
+  `contracts/test/DarkpoolEngine.BatchMatch.test.ts`.
+
 ---
 
 ## 2026-04-23
