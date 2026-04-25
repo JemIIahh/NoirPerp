@@ -30,6 +30,10 @@ solved design decisions; give future agents full context.
   - **Deviations from plan**: `parseAbi(VAULT_ABI)` fails at compile time for `getPosition` because viem's human-readable ABI parser does not support named-component tuple syntax (`tuple(address owner, uint8 marketId, ...)`). Fix: `usePositions` uses `SIMPLE_ABI = parseAbi(["function nextPositionId() view returns (uint256)"])` for the ID read, and defines `GET_POSITION_ABI` as an inline JSON ABI object with explicit `components` array for the tuple. The `getRelayerInstance` return type is untyped (`unknown`) from `relayer.ts`; `EncryptedValue` casts via `as any` to call `inst.userDecrypt(handle, contractAddr, walletClient)` — same workaround used in DarkPool page. Local mock `userDecrypt` ignores extra args safely.
   - **Files**: `frontend/src/pages/Portfolio.tsx`, `frontend/src/hooks/useDeployment.ts`, `frontend/src/hooks/useEncryptedBalance.ts`, `frontend/src/hooks/usePositions.ts`, `frontend/src/components/EncryptedValue.tsx`.
 
+- **Added**: `frontend/src/pages/Trade.tsx`, `frontend/src/hooks/useEncrypt.ts`, `frontend/src/components/Form.tsx` (Task 5). Open-position form with FHE encryption of size + collateral via relayer SDK; `openPosition` tx signed via wagmi `useWriteContract`. Right pane: live positions list with one-click close + per-row encrypted-value reveal (reuses `EncryptedValue` and `usePositions` from Task 4). Allowlist guard prevents submit when not KYC'd (button disabled + red warning). `useEncryptInput` calls `inst.createEncryptedInput(contractAddr, address).add64(v1).add64(v2).encrypt()` — one `inputProof` covers both handles. Local mock path preserved. `Form.tsx` provides minimal `Field`, `Input`, `Select`, `Button` primitives.
+  - **Deviations from plan**: `inst` cast to `as any` before calling `createEncryptedInput` (same pattern as `EncryptedValue`; `getRelayerInstance` returns `unknown`).
+  - **Files**: `frontend/src/pages/Trade.tsx`, `frontend/src/hooks/useEncrypt.ts`, `frontend/src/components/Form.tsx`.
+
 ### Phase 7 — Tier 1 audit fixes (4 Important + 3 Minor + 1 Observation)
 
 - **Fix 1 (Important) — Bot replay misses `PositionClosed`**
