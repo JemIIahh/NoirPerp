@@ -34,6 +34,66 @@ solved design decisions; give future agents full context.
   - **Why**: Spec §6 error-handling table requires warning users when the merkleRoot is older than 7 days. Implementation requires either extending the compliance-backend `/health` response with `rootUpdatedAt` or adding an on-chain read for `Compliance.rootUpdatedAt()`. Deferred to Phase 9; comment documents the deferral and the two implementation paths.
   - **Files**: `frontend/src/pages/Compliance.tsx`.
 
+### Phase 8 complete ✅ (2026-04-25)
+
+- **Frontend live** at `http://127.0.0.1:5173` (local dev). All 5
+  pages implemented + audited:
+  - **Trade** — FHE-encrypted size + collateral via relayer SDK,
+    `PerpEngine.openPosition`, list active positions with close +
+    per-row encrypted reveal.
+  - **Liquidity** — AMM `addLiquidity` (sync) + `requestWithdraw`
+    (async via bot) + plaintext pool stats + encrypted user shares.
+  - **Darkpool** — 3-input encrypted submit via `SubmitOrderInputs`
+    struct, list user's active orders, cancel.
+  - **Portfolio** — wallet token (plaintext), vault balance
+    (encrypted reveal), positions table with size/entry/collateral
+    reveals, AMM shares.
+  - **Compliance** — KYC status + Merkle proof fetch from
+    compliance-backend `/proof/:address`, mailto stub for "request
+    access".
+- **Tech**: Vite 5 + React 18 + TypeScript strict + Tailwind 3 +
+  wagmi 2 + viem 2 + RainbowKit 2 + @tanstack/react-query 5 +
+  @zama-fhe/relayer-sdk 0.4.1 (EXACT pin — matches contracts pin).
+- **Bundle**: 271KB gzipped main + 4.5MB TFHE WASM (lazy) + 163KB
+  gzipped relayer-sdk web chunk (lazy on Sepolia).
+- **Local-mode caveat**: `userDecrypt` against the local mock returns
+  `0n` (FHEVM mock plugin is in-process to Hardhat; stand-alone
+  browser process can't reach it). Real FHE encrypt → on-chain
+  compute → real decrypt round-trip activates on Sepolia in Phase 9.
+- **Tier 1 audit**: passed.
+  - Spec compliance reviewer: ✅ APPROVED + 2 minor observations
+    (Compliance §6 staleness check deferred to Phase 9; relayer-sdk
+    pin 0.4.1 vs spec ^0.4.2 — deliberate, matches contracts).
+  - Code quality reviewer: APPROVED_WITH_MINOR_FIXES — 4 findings
+    (2 Important + 2 Minor) all fixed pre-merge:
+    1. Empty-input guards added to Trade + Darkpool submit buttons
+       (prevents `BigInt("")` SyntaxError on click with blank fields).
+    2. `LIMIT_ABI` dead code removed (no Limit Orders page in Phase 8
+       scope; CLAUDE.md "no half-finished implementations").
+    3. Comments added to `as any` casts in `usePositions` and
+       `useDarkOrders` (justified — viem infers `unknown` for
+       JSON-ABI tuple results, narrowed below).
+    4. Compliance §6 7-day staleness warning documented as TODO in
+       `Compliance.tsx` for Phase 9.
+- **Spec deviations** (documented):
+  1. No frontend test suite (manual smoke + reviewers; Phase 9 runs
+     full stack on Sepolia as integration).
+  2. No charts / orderbook UI.
+  3. Desktop-only (no `md:`/`lg:` breakpoint discipline).
+  4. Single dark theme.
+  5. KYC onboarding is a stub (`mailto:` link).
+  6. No tx history page (RainbowKit pending-tx UI + block explorer
+     suffice).
+- **Cross-package wiring**: frontend reads `contracts/deployments/local.json`
+  via Vite alias `@deployments` (build-time) with runtime fetch
+  fallback. Same pattern as Phase 7's bot consumer of the same JSON.
+- **Runbook**: `frontend/README.md` — 3-terminal local-stack
+  bring-up + 7-step click-through demo flow + Sepolia env wiring +
+  troubleshooting section.
+- **Test counts unchanged**: 326 total (288 contracts + 38 off-chain).
+- **Ready for Phase 9** (Sepolia deploy + Slither/Mythril + invariant/
+  fuzz tests + HCU benchmarks + cross-stack soak).
+
 ### Phase 8 — Frontend (in progress)
 
 - **Added**: `frontend/` Vite + React 18 + TypeScript + Tailwind scaffold. Dependencies pinned: wagmi 2, viem 2, @tanstack/react-query 5, @rainbow-me/rainbowkit 2, @zama-fhe/relayer-sdk 0.4.1 (EXACT pin), react-router-dom 6. Tailwind theme `noir-{black,gray,line,mute,white,accent,green,red}` matches the dark-pool brand. Build clean, dev server boots on 127.0.0.1:5173.

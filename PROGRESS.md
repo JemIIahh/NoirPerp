@@ -139,8 +139,28 @@ fuzz + HCU benchmarks + per-contract sign-off) runs once in Phase 9.
   pattern won't work for this project — off-chain integration must run
   inside hardhat runtime.
 
-- [ ] **Phase 8 — Frontend**
-  Plan: *(not yet written)*
+- [x] **Phase 8 — Frontend** ✅ (2026-04-25)
+  Plan: `docs/plans/2026-04-25-phase-8-frontend.md`
+  Completion criteria met: Vite + React 18 + Tailwind + wagmi 2 +
+  RainbowKit + Zama relayer SDK 0.4.1 (EXACT pin, lazy-loaded on
+  Sepolia, mocked on local). 5 pages: Trade (FHE-encrypted open +
+  close), Liquidity (AMM add / requestWithdraw + encrypted shares),
+  Darkpool (3-input encrypted submit), Portfolio (encrypted reveal of
+  vault balance + position size/entry/collateral), Compliance (KYC
+  status + proof fetch from compliance-backend). Build clean (271KB
+  gzipped main bundle + 4.5MB TFHE WASM, lazy-loaded 163KB gzipped
+  relayer-sdk web chunk). Tier 1 audit passed: 2 Important + 2 Minor
+  findings fixed pre-merge (empty-input guards on Trade/Darkpool
+  submit, LIMIT_ABI dead code removed, `as any` cast comments,
+  Compliance staleness TODO documented for Phase 9). 6 documented
+  spec deviations: no test suite, no charts, desktop-only, single
+  dark theme, KYC stub UI, no tx history page. Local-mode caveat:
+  `userDecrypt` returns `0n` on local (FHEVM mock is in-process to
+  Hardhat); full FHE round-trip lights up on Sepolia in Phase 9.
+  Cross-package CJS/ESM bridge to bot/dist established in Phase 7
+  reused conceptually (frontend reads `contracts/deployments/local.json`
+  via Vite alias). Runbook in `frontend/README.md` documents 3-terminal
+  bring-up + 7-step click-through demo flow + Sepolia env wiring.
 
 - [ ] **Phase 9 — Integration + audit**
   Plan: *(not yet written)*
