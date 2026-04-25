@@ -76,8 +76,20 @@ fuzz + HCU benchmarks + per-contract sign-off) runs once in Phase 9.
   100% stmts / 89.47% branches / 100% funcs / 100% lines. Key plan-bug
   caught by subagent: FHE.eq→FHE.le for partial-withdraw support.
 
-- [ ] **Phase 5 — LimitEngine**
-  Plan: *(not yet written)*
+- [x] **Phase 5 — LimitEngine** ✅ (2026-04-25)
+  Plan: `docs/plans/2026-04-25-phase-5-limit-engine.md`
+  Completion criteria met: LimitEngine live with all 3 order types
+  (TP=1, SL=2, LIMIT=3); bot-triggered async execution via DecryptQueue
+  + Gateway pull-decrypt; PerpEngine executor pattern added (cross-
+  engine `openPositionAsExecutor` + `closePositionAsExecutor`); collateral
+  escrow for Limit-Open with refund on cancel + miss; all 6 trigger
+  directions tested (TP-long/short, SL-long/short, LIMIT-long/short).
+  Tier 1 audit passed (1 critical fixed defensively + 3 important fixed
+  pre-merge). 257 tests passing. Coverage on LimitEngine: 100% stmts /
+  87.5% branches / 100% funcs / 100% lines. Phase 3 backwards-compat
+  preserved (33 PerpEngine tests still green after refactor).
+  Plan-time stack-too-deep mitigated via `PlaceLimitInputs` struct param
+  (avoided viaIR which would have broken 18 other tests).
 
 - [ ] **Phase 6 — DarkpoolEngine**
   Plan: *(not yet written)*

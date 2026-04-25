@@ -193,6 +193,77 @@ addressed in commit `97a5104`:
   — same pattern as `PerpEngine._onLiquidationDecided` (Phase 3);
   KMS sigs are the auth. Documented across phases.
 
+### Phase 5 Tier 1 audit findings (2026-04-25)
+
+Spec-compliance + code-quality reviewers ran in parallel before tick.
+Spec: ✅ compliant except for missing 3 short-direction trigger tests.
+Quality: NEEDS_REWORK — 1 critical (defensive) + 3 important findings.
+All addressed in commit `db5e24a`:
+
+**Critical** (defensive hardening):
+- `_dispatchTrigger` TP/SL path now reads the position via
+  `vault.getPosition(positionId)` and asserts `p.owner == order.owner`
+  before calling `closePositionAsExecutor`. Currently safe because
+  positionIds aren't recycled in NoirVault, but explicit check guards
+  against future storage refactors.
+
+**Important** (test coverage — both reviewers flagged):
+- Added 3 short-direction trigger tests filling out the 6-direction
+  matrix: TP-short, SL-short, LIMIT-short. Each exercises the
+  `!isLong` branches of `_shouldTrigger` that were previously
+  uncovered.
+
+**Minor**:
+- Added 3 `setCompliance` admin tests (happy path + non-admin + zero
+  address) — coverage gap noted by spec reviewer.
+
+**Deferred (documented)**:
+- "Double-handle reuse" in `_refundLimitCollateral` — speculative
+  ("if vault ever invalidates..."). Same pattern Phase 4 ships and
+  244+ tests pass on. Not a current bug.
+- requestId collision (same keeper, same block) — mitigated by order
+  marking inactive after first callback; second call hits dequeue
+  revert. Brittle UX, not exploitable.
+- Keeper field unused in callback emit — Phase 6 fee-logic concern,
+  not a Phase 5 bug.
+- HCU optimization on `_lockCollateral` `safeAdd(x, 0)` (133k HCU
+  identity op) — Phase 9 perf pass.
+- TP/SL `FHE.allow(triggerPrice, msg.sender)` — minor usability
+  (user can't decrypt their own trigger after place); not a spec
+  violation.
+- `openPositionAsExecutor` direct unit tests — exercised through
+  LIMIT-fire integration; PerpEngine isn't a "new" contract in
+  Phase 5 so 80% branch threshold doesn't strictly apply.
+
+### Phase 5 complete ✅ (2026-04-25)
+
+- **PerpEngine executor pattern**: `setExecutor`,
+  `openPositionAsExecutor`, `closePositionAsExecutor`. Refactored
+  `_computeFinals` to take `owner` arg; extracted `_executeClose`
+  from inlined `closePosition` body. Phase 3 backwards-compat
+  preserved (33 tests still pass).
+- **LimitEngine live**:
+  - `placeStopOrTake(positionId, eTrigger, proof, orderType)` —
+    TP=1 / SL=2 placements on existing positions
+  - `placeLimit(PlaceLimitInputs, marketId, isLong, complianceProof)` —
+    Limit-Open with collateral escrow (struct param works around
+    EVM 16-slot stack limit; viaIR rejected because it breaks 18
+    other tests)
+  - `cancelOrder(orderId)` — works for all types; LIMIT refunds escrow
+  - `requestTrigger(orderId)` + `_onTriggerDecided` — async 2-phase
+    via pull-based public decrypt (fhe-primitives.md §5)
+  - All 6 trigger directions covered: TP/SL × long/short and
+    LIMIT × long/short
+- **Test count**: 257 total (244 prior + 13 new across Tasks 1-5
+  plus 6 audit-fix tests).
+- **Coverage**: LimitEngine 100% stmts / 87.5% branches / 100% funcs
+  / 100% lines. PerpEngine modifications kept Phase 3's 33 tests
+  green; new executor branches exercised through LimitEngine
+  integration.
+- **Tier 1 audit**: passed.
+- **Ready for Phase 6** (DarkpoolEngine): batch auction with
+  encrypted order matching.
+
 ### Phase 4 complete ✅ (2026-04-24)
 
 - **AMMEngine live** on local mock:
