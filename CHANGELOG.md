@@ -1285,3 +1285,11 @@ retroactive review. Going forward every phase must pass Tier 1 before tick.
 - **Modified**: `contracts/scripts/deploy-local.ts` — includes
   PerpEngine deploy + auto-registration on vault.
   **Files**: `contracts/scripts/deploy-local.ts`.
+
+- **Added**: `frontend/src/pages/Compliance.tsx` +
+  `frontend/src/hooks/useCompliance.ts`. TanStack-Query-backed
+  fetch of compliance-backend `/proof/:address` and `/health`.
+  Status pill (green/red), proof JSON for allowlisted users, backend
+  health summary. Mailto stub for "request access".
+  **Files**: `frontend/src/pages/Compliance.tsx`,
+  `frontend/src/hooks/useCompliance.ts`.
