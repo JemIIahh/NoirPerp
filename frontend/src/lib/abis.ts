@@ -1,6 +1,14 @@
-// Hand-curated wagmi ABIs (human-readable). Keep minimal so the bundle
-// stays small and the surface is auditable. wagmi v2 / viem accept
-// these strings via parseAbi(...).
+// Hand-curated wagmi ABIs. Most entries are human-readable strings
+// fed through viem's `parseAbi`. Entries that involve named-component
+// tuples (e.g., `getPosition`, `getOrder`) live in their consumer
+// hooks as inline JSON ABI — abitype's parser rejects the
+// `tuple(name1 type1, name2 type2, ...)` form.
+//
+// `DARK_ABI` is an `Abi` already (mix of parsed strings + a JSON
+// `submitOrder` entry with a nested tuple input). Pass it directly
+// to wagmi without re-running it through `parseAbi`.
+
+import { parseAbi, type Abi } from "viem";
 
 export const ERC7984_ABI = [
   "function name() view returns (string)",
@@ -14,7 +22,6 @@ export const ERC7984_ABI = [
 export const VAULT_ABI = [
   "function getBalance(address user) view returns (bytes32)",
   "function deposit(uint64 amount) external",
-  "function getPosition(uint256 positionId) view returns (tuple(address owner, uint8 marketId, bool isLong, bool active, bytes32 size, bytes32 entryPrice, bytes32 collateral))",
   "function nextPositionId() view returns (uint256)",
   "event PositionOpened(uint256 indexed positionId, address indexed owner, uint8 marketId)",
   "event PositionClosed(uint256 indexed positionId)",
@@ -42,10 +49,13 @@ export const AMM_ABI = [
   "function requestWithdraw(uint64 shares) external returns (uint256 requestId)",
 ] as const;
 
-export const DARK_ABI = [
-  "function getOrder(uint256 orderId) view returns (tuple(address owner, uint8 marketId, bool isLong, bool active, bytes32 size, bytes32 collateral, bytes32 limitPrice))",
-  "function nextOrderId() view returns (uint256)",
-  "function cancelOrder(uint256 orderId) external",
+// Pre-built Abi: parseable strings + the JSON `submitOrder` entry.
+// Pass `DARK_ABI` directly to wagmi; do not wrap with parseAbi.
+export const DARK_ABI: Abi = [
+  ...parseAbi([
+    "function nextOrderId() view returns (uint256)",
+    "function cancelOrder(uint256 orderId) external",
+  ] as const),
   {
     name: "submitOrder",
     type: "function",
@@ -69,4 +79,4 @@ export const DARK_ABI = [
     outputs: [{ name: "orderId", type: "uint256" }],
     stateMutability: "nonpayable",
   },
-] as const;
+];

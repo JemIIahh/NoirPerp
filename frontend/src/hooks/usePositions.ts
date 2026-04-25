@@ -2,11 +2,10 @@ import { useReadContracts, useReadContract } from "wagmi";
 import type { Abi } from "viem";
 import { parseAbi } from "viem";
 import { useDeployment } from "./useDeployment";
-import { VAULT_ABI } from "../lib/abis";
 
-// parseAbi handles simple entries fine; getPosition has a named-tuple return
-// that parseAbi can't parse (viem limitation). Split into two ABIs: one for
-// the simple entries (parseAbi), one JSON for getPosition.
+// `getPosition` has a named-component tuple return that abitype's
+// human-readable parser cannot parse. Use one parsed ABI for
+// `nextPositionId` and one JSON-form ABI for `getPosition`.
 const SIMPLE_ABI = parseAbi([
   "function nextPositionId() view returns (uint256)",
 ]);
@@ -34,9 +33,6 @@ const GET_POSITION_ABI: Abi = [
     ],
   },
 ];
-
-// Suppress unused import warning — VAULT_ABI kept for reference / other hooks.
-void (VAULT_ABI as unknown);
 
 export function usePositions(owner: `0x${string}` | undefined, limit = 50) {
   const { data: deployment } = useDeployment();

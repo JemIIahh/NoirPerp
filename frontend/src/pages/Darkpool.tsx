@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useAccount, useWriteContract } from "wagmi";
-import { parseAbi } from "viem";
 import { WalletGate } from "../components/WalletGate";
 import { Field, Input, Select, Button } from "../components/Form";
 import { EncryptedValue } from "../components/EncryptedValue";
@@ -11,8 +10,8 @@ import { useDarkOrders } from "../hooks/useDarkOrders";
 import { MARKETS, marketById } from "../lib/markets";
 import { DARK_ABI } from "../lib/abis";
 
-// parseAbi handles simple + the JSON-form submitOrder entry in DARK_ABI.
-const DARK = parseAbi(DARK_ABI as unknown as string[]);
+// DARK_ABI is already an Abi (parsed strings + JSON submitOrder entry).
+const DARK = DARK_ABI;
 
 export default function Darkpool() { return <WalletGate><Inner /></WalletGate>; }
 

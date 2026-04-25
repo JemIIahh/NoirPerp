@@ -2,11 +2,10 @@ import { useReadContracts, useReadContract } from "wagmi";
 import type { Abi } from "viem";
 import { parseAbi } from "viem";
 import { useDeployment } from "./useDeployment";
-import { DARK_ABI } from "../lib/abis";
 
-// parseAbi handles simple entries; getOrder has a named-tuple return that
-// parseAbi cannot parse (viem limitation). Split into two ABIs: one for
-// the simple entries (parseAbi), one JSON for getOrder.
+// `getOrder` has a named-component tuple return that abitype's
+// human-readable parser cannot parse. Use one parsed ABI for
+// `nextOrderId` and one JSON-form ABI for `getOrder`.
 const SIMPLE_ABI = parseAbi([
   "function nextOrderId() view returns (uint256)",
 ]);
@@ -34,9 +33,6 @@ const GET_ORDER_ABI: Abi = [
     ],
   },
 ];
-
-// Suppress unused import warning — DARK_ABI kept for reference / other hooks.
-void (DARK_ABI as unknown);
 
 export function useDarkOrders(owner: `0x${string}` | undefined, limit = 50) {
   const { data: deployment } = useDeployment();

@@ -12,6 +12,19 @@ solved design decisions; give future agents full context.
 
 ---
 
+## 2026-04-26
+
+### Phase 8 — Frontend (post-merge hotfix)
+
+- **Fixed (Critical, runtime)**: `Darkpool` route crashed at module load with `InvalidParameterError: Invalid ABI parameter. Details: tuple(address owner, uint8 marketId, ...)` from abitype@1.2.3.
+  - **Root cause**: `Darkpool.tsx` ran `parseAbi(DARK_ABI as unknown as string[])` on a mixed array. `DARK_ABI[0]` was a human-readable string with named-component tuple syntax (`tuple(address owner, ...)`), which abitype's `parseAbi` does not accept. The Phase 7 audit subagent noted parseAbi would "pass through" the JSON `submitOrder` entry, but did not catch that the string `getOrder` entry would itself fail to parse.
+  - **Same bug latent in `VAULT_ABI`**: `getPosition` had the same syntax. Caught here too (would have crashed Portfolio + Trade once `useEncryptedBalance.ts`'s `parseAbi(VAULT_ABI)` was hit on a fresh page load).
+  - **Fix**: removed `getPosition` from `VAULT_ABI` and `getOrder` from `DARK_ABI` (both already had matching JSON ABI in their consumer hooks). Restructured `DARK_ABI` as a pre-built `Abi` (`...parseAbi([...])` for the simple entries plus the JSON `submitOrder` entry) so consumers pass it directly without re-running `parseAbi`. Removed `void (X_ABI as unknown)` workarounds from `useDarkOrders.ts` and `usePositions.ts` — those existed only because the imports were vestigial.
+  - **What was tried**: cast (`DARK_ABI as unknown as string[]`) — silently misled TS but failed at runtime.
+  - **Files**: `frontend/src/lib/abis.ts`, `frontend/src/pages/Darkpool.tsx`, `frontend/src/hooks/useDarkOrders.ts`, `frontend/src/hooks/usePositions.ts`.
+
+- **Added**: `contracts/scripts/setup-demo.ts` (mints USDCx + sets vault operator + commits BTC/ETH/SOL prices via 2-of-3 quorum), `contracts/scripts/sync-compliance-root.ts` (pulls `/health` root from compliance-backend and pushes via `Compliance.updateRoot`), `contracts/scripts/verify-proof.ts` (sanity-check that backend-issued proof verifies on-chain). Used during the live frontend smoke test to bootstrap demo state idempotently.
+
 ## 2026-04-25
 
 ### Phase 8 — Frontend (Tier 1 audit fixes)
