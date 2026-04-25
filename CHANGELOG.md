@@ -37,6 +37,28 @@ solved design decisions; give future agents full context.
   **Files**: `oracle-relayer/src/relayer.ts`, `oracle-relayer/src/index.ts`,
   `oracle-relayer/test/relayer.test.ts`.
 
+- **Skipped (deviation from plan Task 3)**: oracle-relayer
+  spawn-based integration test.
+  **Why**: FHEVM hardhat plugin provisions mock precompiles via
+  in-process hooks; running `deploy-local.ts` against a standalone
+  `npx hardhat node` fails inside `providerExtender` with
+  `ECONNREFUSED 127.0.0.1:8545` regardless of `--network localhost`
+  arg — the plugin hardcodes the default port and assumes the FHEVM
+  precompiles are reachable in the same VM. The spawn pattern is
+  fundamentally incompatible with FHEVM mock.
+  **What was tried**: Manual repro confirmed: `npx hardhat node --port 8547`
+  starts cleanly, but `npx hardhat run scripts/deploy-local.ts --network localhost`
+  errors out at `getSigners` because providerExtender's KMS wiring
+  attempt to 8545 (not 8547) fails.
+  **Alternative coverage**: Node-side `submitTick` logic covered by
+  3 mocked-Contract unit tests; on-chain 2-of-3 quorum covered by
+  `contracts/test/Oracle.test.ts` (23 tests, Phase 2). Cross-service
+  integration deferred to Task 13 (bot integration in hardhat runtime).
+  **Root cause for future plans**: any "spawn hardhat node + deploy
+  externally" pattern won't work for this project. Off-chain service
+  integration tests must run inside the hardhat runtime via
+  `contracts/test/*.ts` files.
+
 ### Phase 6 complete ✅ (2026-04-25)
 
 - **DarkpoolEngine live** on local mock:
