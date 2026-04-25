@@ -6,6 +6,7 @@ import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 import { FHESafeMath } from "../lib/FHESafeMath.sol";
 import { DecryptQueue } from "../lib/DecryptQueue.sol";
 import { NoirVault } from "../NoirVault.sol";
+import { Compliance } from "../services/Compliance.sol";
 
 /// @title LimitEngine
 /// @notice Encrypted TP / SL / Limit-Open order management with bot-triggered
@@ -17,8 +18,9 @@ import { NoirVault } from "../NoirVault.sol";
 /// @dev Inherits DecryptQueue for replay-guarded async callbacks.
 contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
     NoirVault public immutable vault;
-    address public oracle;  // set post-deploy
-    address public perp;    // set post-deploy
+    address public oracle;      // set post-deploy
+    address public perp;        // set post-deploy
+    address public compliance;  // set post-deploy
     address public admin;
 
     uint8 public constant ORDER_TYPE_TP = 1;
@@ -43,6 +45,7 @@ contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
     event OracleSet(address indexed newOracle);
     event PerpSet(address indexed newPerp);
+    event ComplianceSet(address indexed newCompliance);
     event OrderPlaced(uint256 indexed orderId, address indexed owner, uint8 orderType, uint8 marketId);
     event OrderCancelled(uint256 indexed orderId, address indexed owner);
 
@@ -54,6 +57,9 @@ contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
     error NotOrderOwner();
     error OrderNotActive();
     error NotAllowed();
+    error ComplianceNotSet();
+    error NotCompliant();
+    error InvalidMarket();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -86,6 +92,12 @@ contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
         if (perp_ == address(0)) revert ZeroAddress();
         perp = perp_;
         emit PerpSet(perp_);
+    }
+
+    function setCompliance(address compliance_) external onlyAdmin {
+        if (compliance_ == address(0)) revert ZeroAddress();
+        compliance = compliance_;
+        emit ComplianceSet(compliance_);
     }
 
     // ─── Views ─────────────────────────────────────────────────────
@@ -163,8 +175,114 @@ contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
         emit OrderCancelled(orderId, msg.sender);
     }
 
-    /// @dev Stub for Task 4 — empty for TP/SL, will be filled in for LIMIT.
-    function _refundLimitCollateral(LimitOrder storage /* order */) internal pure {
-        // Filled in Task 4 (placeLimit + escrow handling)
+    // ─── Place order — LIMIT (open-on-trigger) ─────────────────────
+
+    /// @notice Inputs bundle for `placeLimit`. Packing into a struct works
+    ///         around the EVM 16-slot stack limit on individual calldata args.
+    ///         Tests construct as `{eTrigger, triggerProof, eSize, sizeProof, eCollateral, collateralProof}`.
+    struct PlaceLimitInputs {
+        externalEuint64 eTrigger;
+        bytes triggerProof;
+        externalEuint64 eSize;
+        bytes sizeProof;
+        externalEuint64 eCollateral;
+        bytes collateralProof;
+    }
+
+    /// @notice Places a Limit-Open order. Locks `eCollateral` from caller's
+    ///         vault USDCx balance into LimitEngine's vault balance (escrow).
+    ///         On trigger, the escrow is refunded and PerpEngine opens the
+    ///         position via the executor pattern (debiting user normally).
+    ///         On cancel, the escrow is refunded.
+    function placeLimit(
+        PlaceLimitInputs calldata inputs,
+        uint8 marketId,
+        bool isLong,
+        bytes32[] calldata complianceProof
+    ) external returns (uint256 orderId) {
+        // Pre-conditions
+        if (compliance == address(0)) revert ComplianceNotSet();
+        if (!Compliance(compliance).verify(msg.sender, complianceProof)) revert NotCompliant();
+        if (marketId < 1 || marketId > 3) revert InvalidMarket();
+
+        // Import all 3 encrypted inputs in a helper to free stack slots
+        (euint64 triggerPrice, euint64 size, euint64 collateral) = _importLimitInputs(inputs);
+
+        // Lock collateral escrow
+        _lockCollateral(msg.sender, collateral);
+
+        // Store the order (helper to free stack)
+        orderId = _storeLimitOrder(triggerPrice, size, collateral, marketId, isLong);
+
+        emit OrderPlaced(orderId, msg.sender, ORDER_TYPE_LIMIT, marketId);
+    }
+
+    /// @dev Imports the 3 encrypted inputs with isSenderAllowed guards.
+    ///      Extracted to free stack slots in placeLimit.
+    function _importLimitInputs(
+        PlaceLimitInputs calldata inputs
+    ) internal returns (euint64 triggerPrice, euint64 size, euint64 collateral) {
+        triggerPrice = FHE.fromExternal(inputs.eTrigger, inputs.triggerProof);
+        if (!FHE.isSenderAllowed(triggerPrice)) revert NotAllowed();
+
+        size = FHE.fromExternal(inputs.eSize, inputs.sizeProof);
+        if (!FHE.isSenderAllowed(size)) revert NotAllowed();
+
+        collateral = FHE.fromExternal(inputs.eCollateral, inputs.collateralProof);
+        if (!FHE.isSenderAllowed(collateral)) revert NotAllowed();
+    }
+
+    /// @dev Stores the order in `_orders` with persistent ACL grants.
+    ///      Extracted to free stack slots in placeLimit.
+    function _storeLimitOrder(
+        euint64 triggerPrice,
+        euint64 size,
+        euint64 collateral,
+        uint8 marketId,
+        bool isLong
+    ) internal returns (uint256 orderId) {
+        FHE.allowThis(triggerPrice);
+        FHE.allowThis(size);
+        FHE.allowThis(collateral);
+        FHE.allow(triggerPrice, msg.sender);
+        FHE.allow(size, msg.sender);
+        FHE.allow(collateral, msg.sender);
+
+        orderId = nextOrderId++;
+        _orders[orderId] = LimitOrder({
+            owner: msg.sender,
+            orderType: ORDER_TYPE_LIMIT,
+            marketId: marketId,
+            isLong: isLong,
+            active: true,
+            positionId: 0,
+            triggerPrice: triggerPrice,
+            size: size,
+            collateral: collateral
+        });
+    }
+
+    /// @dev Lock collateral escrow: debit user vault, credit LimitEngine vault.
+    function _lockCollateral(address user, euint64 collateral) internal {
+        FHE.allowTransient(collateral, address(vault));
+        vault.adjustBalance(user, collateral, false);
+
+        euint64 collCredit = FHESafeMath.safeAdd(collateral, FHE.asEuint64(0));
+        FHE.allowTransient(collCredit, address(vault));
+        vault.adjustBalance(address(this), collCredit, true);
+    }
+
+    /// @dev Refunds escrowed collateral for a LIMIT order. Debits LimitEngine's
+    ///      vault balance + credits the order's owner. Called from cancelOrder
+    ///      and from the trigger callback (before executing the position open).
+    function _refundLimitCollateral(LimitOrder storage order) internal {
+        // Debit LimitEngine's vault balance
+        FHE.allowTransient(order.collateral, address(vault));
+        vault.adjustBalance(address(this), order.collateral, false);
+
+        // Credit user's vault balance (fresh handle copy)
+        euint64 refund = FHESafeMath.safeAdd(order.collateral, FHE.asEuint64(0));
+        FHE.allowTransient(refund, address(vault));
+        vault.adjustBalance(order.owner, refund, true);
     }
 }
