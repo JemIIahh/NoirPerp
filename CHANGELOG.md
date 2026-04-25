@@ -14,6 +14,11 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-25
 
+### Phase 8 — Frontend (in progress)
+
+- **Added**: `frontend/` Vite + React 18 + TypeScript + Tailwind scaffold. Dependencies pinned: wagmi 2, viem 2, @tanstack/react-query 5, @rainbow-me/rainbowkit 2, @zama-fhe/relayer-sdk 0.4.1 (EXACT pin), react-router-dom 6. Tailwind theme `noir-{black,gray,line,mute,white,accent,green,red}` matches the dark-pool brand. Build clean, dev server boots on 127.0.0.1:5173.
+  - **Files**: `frontend/package.json`, `frontend/vite.config.ts`, `frontend/tsconfig.json`, `frontend/tsconfig.node.json`, `frontend/tailwind.config.js`, `frontend/postcss.config.js`, `frontend/index.html`, `frontend/.gitignore`, `frontend/.env.example`, `frontend/src/main.tsx`, `frontend/src/App.tsx`, `frontend/src/index.css`.
+
 ### Phase 7 — Tier 1 audit fixes (4 Important + 3 Minor + 1 Observation)
 
 - **Fix 1 (Important) — Bot replay misses `PositionClosed`**
