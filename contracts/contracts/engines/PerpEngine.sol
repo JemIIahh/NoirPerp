@@ -27,6 +27,8 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
     address public admin;
     address public liquidationPool;
 
+    mapping(address => bool) public authorizedExecutors;
+
     uint64 public constant MAX_LEVERAGE = 20;
     uint64 public constant MAINTENANCE_MARGIN_BPS = 500;   // 5%
     uint64 public constant LIQUIDATOR_FEE_BPS = 50;        // 0.5%
@@ -41,6 +43,7 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
     event LiquidationChecked(uint256 indexed positionId);
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
     event LiquidationPoolChanged(address indexed oldPool, address indexed newPool);
+    event ExecutorSet(address indexed executor, bool authorized);
 
     error NotAdmin();
     error NotCompliant();
@@ -51,6 +54,7 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
     error VaultPaused();
     error NotPositionOwner();
     error PositionNotActive();
+    error NotAuthorizedExecutor();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -60,6 +64,11 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
     modifier whenNotPaused() {
         // Cascade from vault's pause state.
         if (vault.paused()) revert VaultPaused();
+        _;
+    }
+
+    modifier onlyAuthorizedExecutor() {
+        if (!authorizedExecutors[msg.sender]) revert NotAuthorizedExecutor();
         _;
     }
 
@@ -99,6 +108,14 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         emit LiquidationPoolChanged(old, newPool);
     }
 
+    /// @notice Authorize or revoke an executor contract (e.g., LimitEngine)
+    ///         that can call open/close on behalf of users.
+    function setExecutor(address executor, bool authorized) external onlyAdmin {
+        if (executor == address(0)) revert ZeroAddress();
+        authorizedExecutors[executor] = authorized;
+        emit ExecutorSet(executor, authorized);
+    }
+
     // ─── Open position (synchronous) ───────────────────────────────────
 
     /// @notice Opens a perpetual position. If margin or balance insufficient,
@@ -128,7 +145,7 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         if (!FHE.isSenderAllowed(collateral)) revert NotAllowed();
 
         // Compute select-guarded final ciphertexts
-        (euint64 finalSize, euint64 finalCollateral) = _computeFinals(size, collateral, price);
+        (euint64 finalSize, euint64 finalCollateral) = _computeFinals(size, collateral, price, msg.sender);
 
         // Settle: debit vault + write position
         positionId = _settle(msg.sender, finalSize, finalCollateral, price, isLong, marketId);
@@ -136,13 +153,16 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
 
     /// @dev Runs balance + margin FHE checks, returns select-guarded (size, collateral).
     ///      Extracted to keep each function's stack frame within the EVM 16-slot limit.
+    ///      `owner` is the user whose balance is checked (msg.sender for direct calls,
+    ///      explicit address for executor calls).
     function _computeFinals(
         euint64 size,
         euint64 collateral,
-        uint64 price
+        uint64 price,
+        address owner
     ) internal returns (euint64 finalSize, euint64 finalCollateral) {
         euint64 ePrice = FHE.asEuint64(price);
-        euint64 balance = vault.allowBalanceAccess(msg.sender);
+        euint64 balance = vault.allowBalanceAccess(owner);
         ebool balanceOK = FHE.ge(balance, collateral);
         euint64 notionalValue = MarginMath.notional(size, ePrice);
         ebool marginOK = MarginMath.marginOK(collateral, notionalValue, MAX_LEVERAGE);
@@ -281,6 +301,33 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         emit Liquidated(positionId, keeperAddr);
     }
 
+    // ─── Open position as executor (synchronous) ──────────────────────
+
+    /// @notice Executor-only entry to open a position on behalf of `owner`.
+    ///         Skips compliance check (executor verifies at place-time).
+    ///         Requires already-imported euint64 ciphertexts (caller must
+    ///         hold ACL via prior FHE.fromExternal or storage read).
+    /// @dev Caller (executor) must `FHE.allowTransient(size, address(this))`
+    ///      and same for collateral before calling.
+    function openPositionAsExecutor(
+        address owner,
+        euint64 size,
+        euint64 collateral,
+        bool isLong,
+        uint8 marketId
+    ) external onlyAuthorizedExecutor whenNotPaused returns (uint256 positionId) {
+        if (!FHE.isSenderAllowed(size)) revert NotAllowed();
+        if (!FHE.isSenderAllowed(collateral)) revert NotAllowed();
+        if (marketId < 1 || marketId > 3) revert InvalidMarket();
+        (uint64 price, bool fresh) = oracle.getPrice(marketId);
+        if (!fresh) revert OraclePriceStale();
+
+        // Pass plaintext `price` to internal helpers — they trivially-encrypt
+        // internally. Matches existing _computeFinals + _settle signatures.
+        (euint64 finalSize, euint64 finalCollateral) = _computeFinals(size, collateral, price, owner);
+        positionId = _settle(owner, finalSize, finalCollateral, price, isLong, marketId);
+    }
+
     // ─── Close position (synchronous) ──────────────────────────────────
 
     /// @notice Closes a caller-owned position. Computes encrypted PnL
@@ -293,13 +340,25 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
         // Fetch position with transient ACL on each ciphertext field
         NoirVault.Position memory p = vault.allowPositionAccess(positionId);
 
-        // Ownership + lifecycle guards (plaintext fields, no FHE needed)
+        // Ownership guard for direct user calls
         if (p.owner != msg.sender) revert NotPositionOwner();
         if (!p.active) revert PositionNotActive();
 
         // Oracle freshness
         (uint64 price, bool fresh) = oracle.getPrice(p.marketId);
         if (!fresh) revert OraclePriceStale();
+
+        _executeClose(positionId, p, price);
+    }
+
+    /// @dev Internal close logic: assumes p.active was already checked +
+    ///      caller-authorization handled by the wrapper. Computes PnL,
+    ///      credits user balance, and marks position closed in vault.
+    function _executeClose(
+        uint256 positionId,
+        NoirVault.Position memory p,
+        uint64 price
+    ) internal {
         euint64 ePrice = FHE.asEuint64(price);
 
         // Compute profit + loss branches (both non-negative)
@@ -321,5 +380,18 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
 
         // Mark position closed (vault emits PositionClosed canonically)
         vault.closePosition(positionId);
+    }
+
+    /// @notice Executor-only entry to close a position on behalf of its owner.
+    ///         Reads the position via vault.allowPositionAccess; uses the
+    ///         stored owner field (no msg.sender == owner check).
+    function closePositionAsExecutor(uint256 positionId) external onlyAuthorizedExecutor whenNotPaused {
+        NoirVault.Position memory p = vault.allowPositionAccess(positionId);
+        if (!p.active) revert PositionNotActive();
+
+        (uint64 price, bool fresh) = oracle.getPrice(p.marketId);
+        if (!fresh) revert OraclePriceStale();
+
+        _executeClose(positionId, p, price);
     }
 }

@@ -12,6 +12,28 @@ solved design decisions; give future agents full context.
 
 ---
 
+## 2026-04-23
+
+### Phase 5 — LimitEngine (in progress)
+
+- **Modified**: `contracts/contracts/engines/PerpEngine.sol` — added
+  authorized-executor pattern (`authorizedExecutors` mapping,
+  `setExecutor` admin, `onlyAuthorizedExecutor` modifier),
+  `openPositionAsExecutor`, `closePositionAsExecutor`. Refactored
+  `_computeFinals` to take `owner` as arg (was `msg.sender`). Extracted
+  `_executeClose` internal helper from inlined `closePosition` body;
+  `closePosition` and `closePositionAsExecutor` both delegate to it.
+  Existing `openPosition`/`closePosition` pass `msg.sender` and remain
+  functionally unchanged. Phase 3 test suite (33 tests) all pass — no
+  regressions. 10 new executor tests.
+  **Why**: Phase 5 LimitEngine needs to open/close positions on behalf
+  of users at trigger time. The executor pattern provides authorization
+  without breaking msg.sender semantics for direct user calls.
+  **Files**: `contracts/contracts/engines/PerpEngine.sol`,
+  `contracts/test/PerpEngine.Executor.test.ts`.
+
+---
+
 ## 2026-04-24
 
 ### Phase 4 — AMMEngine (in progress)
