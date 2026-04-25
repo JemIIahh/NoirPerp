@@ -16,6 +16,25 @@ solved design decisions; give future agents full context.
 
 ### Phase 7 — Off-chain services (in progress)
 
+- **Added**: `bot/src/index.ts` — main bot entrypoint (Task 12 of Phase 7 plan).
+  Wires `loadConfig`, `makeClients`, `TrackedSet`, all four watcher subscribe/tick
+  functions, and `makePublicDecrypt`. Includes `replayEvents` that bootstraps tracked
+  state from historical on-chain events before live subscription starts.
+  Key corrections vs. plan applied:
+  - `replayEvents` queries `PositionOpened` from `vaultRO` (NoirVault), NOT `perpRO`.
+  - `replayEvents` for LimitEngine prunes via `Triggered` + `OrderCancelled` (not
+    `OrderTriggered`/`OrderMissed`); `TriggerNotMet` keeps the order tracked.
+  - `subscribeLiquidation` called with 4 args: `(vaultRO, perpRO, tracked, logger)`.
+  - `makePublicDecrypt` stubs local network; uses `@zama-fhe/relayer-sdk` via deferred
+    dynamic import (bypasses tsc module resolution for optional Sepolia-only dep).
+  - Logger typed as `any` in entrypoint to bridge pino generic mismatch between
+    `Logger<never>` (watcher signatures) and `Logger<string>` (pino() return); no
+    watcher files modified.
+  Build: clean tsc compile. Tests: 18/18 passing (no regressions).
+  **Files**: `bot/src/index.ts`.
+
+
+
 - **Added**: `bot/` scaffold — Task 7 of Phase 7 plan.
   `package.json` (`@noirperp/bot`, type=module, deps: `@zama-fhe/relayer-sdk@0.4.1` exact,
   `dotenv@^16.4`, `ethers@^6.13`, `pino@^9`; devDeps: `@types/node@^22`,
