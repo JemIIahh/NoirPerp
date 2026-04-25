@@ -46,6 +46,27 @@ solved design decisions; give future agents full context.
   `contracts/test/LimitEngine.Admin.test.ts`.
   13 new admin tests; full suite 228 passing.
 
+- **Added**: `LimitEngine.requestTrigger` + `_onTriggerDecided` async
+  callback for all 3 order types (Task 5). `requestTrigger` validates
+  oracle/perp set, order active, oracle freshness; trivially-encrypts
+  the oracle price; computes `ebool shouldTrigger` via
+  `_shouldTrigger(orderType, isLong, ePrice, triggerPrice)` with
+  direction formula `useGe = (TP&&long) || (SL&&short) || (LIMIT&&short)`;
+  marks publicly decryptable; enqueues with orderId-encoded context;
+  emits `TriggerRequested`. `_onTriggerDecided` callback: `FHE.checkSignatures`
+  first, then `_dequeue` (replay guard) BEFORE external calls, marks
+  order inactive (single-use), decodes cleartext bool, dispatches via
+  `_dispatchTrigger` helper (extracted to avoid stack-too-deep): TP/SL →
+  `perp.closePositionAsExecutor(positionId)`; LIMIT → `_refundLimitCollateral`
+  then `FHE.allowTransient` on size+collateral then `perp.openPositionAsExecutor`.
+  On miss: LIMIT escrow still refunded; emits `TriggerNotMet`. On fire:
+  emits `Triggered`. New errors: `OracleNotSet`, `PerpNotSet`,
+  `OraclePriceStale`. New events: `TriggerRequested`, `Triggered`,
+  `TriggerNotMet`. New imports: `Oracle`, `PerpEngine`. 7 unit tests
+  covering all 3 types + miss path + guards. Full suite: 251 passing.
+  **Files**: `contracts/contracts/engines/LimitEngine.sol`,
+  `contracts/test/LimitEngine.Trigger.test.ts`.
+
 - **Added**: `LimitEngine.placeStopOrTake` (TP=1 / SL=2) +
   `cancelOrder` (works for all types). TP/SL placements verify
   caller owns the position via `vault.allowPositionAccess`,

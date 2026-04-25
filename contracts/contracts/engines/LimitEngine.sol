@@ -7,6 +7,8 @@ import { FHESafeMath } from "../lib/FHESafeMath.sol";
 import { DecryptQueue } from "../lib/DecryptQueue.sol";
 import { NoirVault } from "../NoirVault.sol";
 import { Compliance } from "../services/Compliance.sol";
+import { Oracle } from "../services/Oracle.sol";
+import { PerpEngine } from "./PerpEngine.sol";
 
 /// @title LimitEngine
 /// @notice Encrypted TP / SL / Limit-Open order management with bot-triggered
@@ -48,6 +50,9 @@ contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
     event ComplianceSet(address indexed newCompliance);
     event OrderPlaced(uint256 indexed orderId, address indexed owner, uint8 orderType, uint8 marketId);
     event OrderCancelled(uint256 indexed orderId, address indexed owner);
+    event TriggerRequested(uint256 indexed requestId, uint256 indexed orderId, address indexed keeper, bytes32 shouldTriggerHandle);
+    event Triggered(uint256 indexed orderId, address indexed user);
+    event TriggerNotMet(uint256 indexed orderId);
 
     error NotAdmin();
     error ZeroAddress();
@@ -60,6 +65,9 @@ contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
     error ComplianceNotSet();
     error NotCompliant();
     error InvalidMarket();
+    error OracleNotSet();
+    error PerpNotSet();
+    error OraclePriceStale();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -270,6 +278,116 @@ contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
         euint64 collCredit = FHESafeMath.safeAdd(collateral, FHE.asEuint64(0));
         FHE.allowTransient(collCredit, address(vault));
         vault.adjustBalance(address(this), collCredit, true);
+    }
+
+    // ─── Async trigger ─────────────────────────────────────────────
+
+    /// @notice Bot-callable. Computes whether the order should fire by
+    ///         comparing the current oracle price to the encrypted
+    ///         trigger, then requests Gateway decryption of the bool.
+    function requestTrigger(uint256 orderId) external returns (uint256 requestId) {
+        if (oracle == address(0)) revert OracleNotSet();
+        if (perp == address(0)) revert PerpNotSet();
+
+        LimitOrder storage order = _orders[orderId];
+        if (!order.active) revert OrderNotActive();
+
+        (uint64 price, bool fresh) = Oracle(oracle).getPrice(order.marketId);
+        if (!fresh) revert OraclePriceStale();
+        euint64 ePrice = FHE.asEuint64(price);
+
+        ebool shouldTrigger = _shouldTrigger(
+            order.orderType, order.isLong, ePrice, order.triggerPrice
+        );
+        FHE.makePubliclyDecryptable(shouldTrigger);
+
+        requestId = uint256(keccak256(abi.encode(
+            orderId, block.number, block.timestamp, msg.sender
+        )));
+
+        // Context = orderId only (we re-read order in callback)
+        bytes memory ctx = abi.encode(orderId);
+        _enqueue(requestId, msg.sender, orderId, ctx);
+
+        emit TriggerRequested(requestId, orderId, msg.sender, FHE.toBytes32(shouldTrigger));
+    }
+
+    /// @notice Gateway-relayed callback. Verifies KMS sigs, dequeues
+    ///         (replay guard) BEFORE external calls, marks order inactive,
+    ///         and dispatches to the right execution path on match.
+    function _onTriggerDecided(
+        uint256 requestId,
+        bytes32[] memory handlesList,
+        bytes memory cleartexts,
+        bytes memory decryptionProof
+    ) external {
+        // 1. Verify KMS signatures first (reverts if invalid)
+        FHE.checkSignatures(handlesList, cleartexts, decryptionProof);
+
+        // 2. Dequeue BEFORE any external call — replay guard
+        PendingDecrypt memory ctx = _dequeue(requestId);
+        uint256 orderId = abi.decode(ctx.context, (uint256));
+
+        LimitOrder storage order = _orders[orderId];
+        // Mark inactive regardless of outcome — trigger is single-use
+        order.active = false;
+
+        uint256 clearUint = abi.decode(cleartexts, (uint256));
+        bool shouldFire = clearUint != 0;
+
+        _dispatchTrigger(orderId, order, shouldFire);
+    }
+
+    /// @dev Dispatched from `_onTriggerDecided` to avoid stack-too-deep.
+    ///      Handles all 3 order types on both fire and miss paths.
+    function _dispatchTrigger(
+        uint256 orderId,
+        LimitOrder storage order,
+        bool shouldFire
+    ) internal {
+        if (!shouldFire) {
+            // For LIMIT: refund escrow even on miss
+            if (order.orderType == ORDER_TYPE_LIMIT) {
+                _refundLimitCollateral(order);
+            }
+            emit TriggerNotMet(orderId);
+            return;
+        }
+
+        if (order.orderType == ORDER_TYPE_TP || order.orderType == ORDER_TYPE_SL) {
+            PerpEngine(perp).closePositionAsExecutor(order.positionId);
+        } else {
+            // LIMIT: refund escrow first, then have Perp open the position
+            // (which will debit user normally and apply margin/silent-zero)
+            _refundLimitCollateral(order);
+
+            FHE.allowTransient(order.size, perp);
+            FHE.allowTransient(order.collateral, perp);
+            PerpEngine(perp).openPositionAsExecutor(
+                order.owner, order.size, order.collateral, order.isLong, order.marketId
+            );
+        }
+
+        emit Triggered(orderId, order.owner);
+    }
+
+    // ─── Trigger condition helper ─────────────────────────────────
+
+    /// @dev Computes `ebool shouldTrigger` based on order type and direction.
+    ///      useGe = (TP && long) || (SL && short) || (LIMIT && short)
+    function _shouldTrigger(
+        uint8 orderType,
+        bool isLong,
+        euint64 currentPrice,
+        euint64 triggerPrice
+    ) internal returns (ebool) {
+        bool useGe;
+        if (orderType == ORDER_TYPE_TP) useGe = isLong;
+        else if (orderType == ORDER_TYPE_SL) useGe = !isLong;
+        else /* LIMIT */ useGe = !isLong;
+        return useGe
+            ? FHE.ge(currentPrice, triggerPrice)
+            : FHE.le(currentPrice, triggerPrice);
     }
 
     /// @dev Refunds escrowed collateral for a LIMIT order. Debits LimitEngine's
