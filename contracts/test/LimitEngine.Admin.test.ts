@@ -105,6 +105,26 @@ describe("LimitEngine — admin + scaffold", () => {
     });
   });
 
+  describe("setCompliance", () => {
+    // Reuse `oracle` signer as a stand-in compliance address — admin tests
+    // don't deploy a real Compliance contract.
+    it("admin can set compliance", async () => {
+      await expect(limit.setCompliance(oracle.address))
+        .to.emit(limit, "ComplianceSet").withArgs(oracle.address);
+      expect(await limit.compliance()).to.equal(oracle.address);
+    });
+
+    it("non-admin cannot set", async () => {
+      await expect(limit.connect(alice).setCompliance(oracle.address))
+        .to.be.revertedWithCustomError(limit, "NotAdmin");
+    });
+
+    it("reverts on zero address", async () => {
+      await expect(limit.setCompliance(hre.ethers.ZeroAddress))
+        .to.be.revertedWithCustomError(limit, "ZeroAddress");
+    });
+  });
+
   describe("constants", () => {
     it("exposes order type constants", async () => {
       expect(await limit.ORDER_TYPE_TP()).to.equal(1);

@@ -298,6 +298,98 @@ describe("LimitEngine — async trigger (all 3 types)", () => {
     });
   });
 
+  describe("TP trigger (short position)", () => {
+    it("closes the short when price falls to TP target", async () => {
+      // Alice opens a short at 3000
+      const perpAddr = await perp.getAddress();
+      const sizeEnc = await encrypt(perpAddr, alice.address, 5n);
+      const collEnc = await encrypt(perpAddr, alice.address, 1_000n);
+      await (await perp.connect(alice).openPosition(
+        sizeEnc.handles[0], sizeEnc.inputProof,
+        collEnc.handles[0], collEnc.inputProof,
+        false /* isLong */, MARKET_ETH, aliceProof,
+      )).wait();
+
+      // TP for short: profit when price drops. trigger=2800.
+      const limitAddr = await limit.getAddress();
+      const trigEnc = await encrypt(limitAddr, alice.address, 2_800n);
+      const tx = await limit.connect(alice).placeStopOrTake(
+        0, trigEnc.handles[0], trigEnc.inputProof, TP
+      );
+      const r = await tx.wait();
+      const orderId = (r!.logs.find((l: any) => l.fragment?.name === "OrderPlaced") as any).args.orderId;
+
+      // Drop price to 2800 — useGe = (TP&&long=false) → use le → 2800<=2800 = true
+      await commitPrice(MARKET_ETH, 2_800n);
+      await (await limit.connect(keeper).requestTrigger(orderId)).wait();
+      await fulfillTrigger(orderId);
+
+      const pos = await vault.getPosition(0);
+      expect(pos.active).to.equal(false);
+    });
+  });
+
+  describe("SL trigger (short position)", () => {
+    it("closes the short when price rises to SL stop", async () => {
+      const perpAddr = await perp.getAddress();
+      const sizeEnc = await encrypt(perpAddr, alice.address, 5n);
+      const collEnc = await encrypt(perpAddr, alice.address, 1_000n);
+      await (await perp.connect(alice).openPosition(
+        sizeEnc.handles[0], sizeEnc.inputProof,
+        collEnc.handles[0], collEnc.inputProof,
+        false /* isLong */, MARKET_ETH, aliceProof,
+      )).wait();
+
+      // SL for short: stop-out when price rises. trigger=3100.
+      const limitAddr = await limit.getAddress();
+      const trigEnc = await encrypt(limitAddr, alice.address, 3_100n);
+      const tx = await limit.connect(alice).placeStopOrTake(
+        0, trigEnc.handles[0], trigEnc.inputProof, SL
+      );
+      const r = await tx.wait();
+      const orderId = (r!.logs.find((l: any) => l.fragment?.name === "OrderPlaced") as any).args.orderId;
+
+      // Rise to 3100 — useGe = (SL&&!isLong=true) → use ge → 3100>=3100 = true
+      await commitPrice(MARKET_ETH, 3_100n);
+      await (await limit.connect(keeper).requestTrigger(orderId)).wait();
+      await fulfillTrigger(orderId);
+
+      const pos = await vault.getPosition(0);
+      expect(pos.active).to.equal(false);
+    });
+  });
+
+  describe("LIMIT trigger (open new short position)", () => {
+    it("opens a new short position when price rises to limit-sell trigger", async () => {
+      // Limit-sell at 3100 — wants price to RISE to that level before opening short
+      const limitAddr = await limit.getAddress();
+      const trigEnc = await encrypt(limitAddr, alice.address, 3_100n);
+      const sizeEnc = await encrypt(limitAddr, alice.address, 5n);
+      const collEnc = await encrypt(limitAddr, alice.address, 1_000n);
+      const tx = await limit.connect(alice).placeLimit(
+        {
+          eTrigger: trigEnc.handles[0], triggerProof: trigEnc.inputProof,
+          eSize: sizeEnc.handles[0], sizeProof: sizeEnc.inputProof,
+          eCollateral: collEnc.handles[0], collateralProof: collEnc.inputProof,
+        },
+        MARKET_ETH, false /* short */, aliceProof,
+      );
+      const r = await tx.wait();
+      const orderId = (r!.logs.find((l: any) => l.fragment?.name === "OrderPlaced") as any).args.orderId;
+
+      // Price rises to 3100 — useGe = (LIMIT&&!isLong=true) → ge → 3100>=3100 = true
+      await commitPrice(MARKET_ETH, 3_100n);
+      await (await limit.connect(keeper).requestTrigger(orderId)).wait();
+      await fulfillTrigger(orderId);
+
+      // Position 0 opened (alice's first since this test starts fresh)
+      const pos = await vault.getPosition(0);
+      expect(pos.owner).to.equal(alice.address);
+      expect(pos.isLong).to.equal(false);
+      expect(pos.active).to.equal(true);
+    });
+  });
+
   describe("guards", () => {
     it("requestTrigger reverts on inactive order", async () => {
       const perpAddr = await perp.getAddress();

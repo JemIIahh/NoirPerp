@@ -355,6 +355,13 @@ contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
         }
 
         if (order.orderType == ORDER_TYPE_TP || order.orderType == ORDER_TYPE_SL) {
+            // Defensive: re-verify the position's owner matches the order's
+            // owner before closing. positionIds aren't recycled in current
+            // NoirVault, but this guards against future storage refactors
+            // and against any path where a stale positionId could leak.
+            NoirVault.Position memory p = vault.getPosition(order.positionId);
+            if (p.owner != order.owner) revert NotPositionOwner();
+
             PerpEngine(perp).closePositionAsExecutor(order.positionId);
         } else {
             // LIMIT: refund escrow first, then have Perp open the position
