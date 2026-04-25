@@ -8,9 +8,10 @@ const ORACLE_ABI = [
   "function submitPrice(uint8 marketId, uint64 price, uint64 timestamp) external",
 ];
 
+const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
+
 async function main() {
   const cfg = loadConfig();
-  const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
   const provider = new JsonRpcProvider(cfg.rpcUrl);
   const oracleAddr = cfg.deployment.contracts.Oracle;
   const walletA = new Wallet(cfg.relayerAKey, provider);
@@ -38,9 +39,14 @@ async function main() {
       busy = false;
     }
   }, cfg.pollIntervalMs);
+
+  process.on("SIGTERM", () => {
+    logger.info({}, "shutting down");
+    process.exit(0);
+  });
 }
 
 main().catch((err) => {
-  console.error(err);
+  logger.fatal({ err: err?.message }, "fatal");
   process.exit(1);
 });

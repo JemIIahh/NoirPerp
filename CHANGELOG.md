@@ -14,6 +14,76 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-25
 
+### Phase 7 — Tier 1 audit fixes (4 Important + 3 Minor + 1 Observation)
+
+- **Fix 1 (Important) — Bot replay misses `PositionClosed`**
+  - Root cause: `replayEvents` in `bot/src/index.ts` only excluded liquidated positions
+    from the live-tracking set; positions closed normally (via `PositionClosed` on NoirVault)
+    were still enqueued and the bot would keep probing them.
+  - Fix: added parallel `queryFilter("PositionClosed", fromBlock)` on `clients.vaultRO` and
+    built a union dropset from both `Liquidated` and `PositionClosed` events.
+  - `bot/src/clients.ts` already had `event PositionClosed(uint256 indexed positionId)` in
+    `VAULT_ABI` — no change needed there.
+  - Files: `bot/src/index.ts`
+
+- **Fix 2 (Important) — pino-http registered AFTER routes in compliance-backend**
+  - Root cause: `compliance-backend/src/index.ts` called `buildApp(...)` then called
+    `app.use(pinoHttp(...))`, registering the HTTP logger after all routes were already
+    mounted — requests matched before the logger middleware ran.
+  - Fix: `buildApp` extended to accept an optional `logger` param (`AppOpts.logger?: any`).
+    Static import of `pino-http` added to `server.ts`. When `opts.logger` is truthy,
+    `pinoHttp({ logger })` is registered as the FIRST middleware before `express.json()`.
+    `index.ts` now passes `logger` into `buildApp`; separate `app.use(pinoHttp(...))` call
+    removed. Tests omit `logger` — conditional skips the middleware safely.
+  - Files: `compliance-backend/src/server.ts`, `compliance-backend/src/index.ts`
+
+- **Fix 3 (Important) — Document race window in bot replay**
+  - Added comment immediately after `await replayEvents(...)` call explaining the MVP
+    race window between replay tip and WS subscription start, why it is acceptable
+    (idempotent on-chain calls, tick loop catchup), and when it will be addressed
+    (Phase 9 WS-then-replay pattern).
+  - Files: `bot/src/index.ts`
+
+- **Fix 4 (Important) — oracle-relayer SIGTERM handler**
+  - Root cause: oracle-relayer had no SIGTERM handler; `process.exit()` would only fire
+    naturally (no cleanup / graceful shutdown logging).
+  - Fix: added `process.on("SIGTERM", ...)` inside `main()` after the `setInterval` block,
+    logging `"shutting down"` then exiting cleanly.
+  - Files: `oracle-relayer/src/index.ts`
+
+- **Fix 5 (Minor) — Logger type consistency**
+  - `bot/src/watchers/decrypt-relay.ts`: replaced inline `type Logger = { info, error }`
+    with `import type { Logger } from "pino"`.
+  - `bot/src/index.ts`: `replayEvents` param changed from `logger: any` to `logger: Logger`;
+    added `import type { Logger } from "pino"` at top.
+  - Files: `bot/src/watchers/decrypt-relay.ts`, `bot/src/index.ts`
+
+- **Fix 6 (Minor) — console.error → structured logger in fatal catch handlers**
+  - Root cause: both `oracle-relayer/src/index.ts` and `bot/src/index.ts` ended with
+    `main().catch((err) => { console.error(err); ... })`, bypassing the structured pino
+    logger for fatal errors.
+  - Fix: hoisted `logger` to module scope in both files (removed re-declaration inside
+    `main()`). Updated catch handlers to `logger.fatal({ err: err?.message }, "fatal")`.
+  - Files: `oracle-relayer/src/index.ts`, `bot/src/index.ts`
+
+- **Fix 7 (Minor) — Add /admin/remove 401 test**
+  - Added test `"POST /admin/remove without key returns 401"` before the existing remove
+    test in `compliance-backend/test/server.test.ts`. Compliance tests: 13 → 14 passing.
+  - Files: `compliance-backend/test/server.test.ts`
+
+- **Fix 8 (Observation) — Document rethrow in decrypt-relay catch blocks**
+  - Added comment before `throw err` in both `handleSingleDecrypt` and `handleBatchDecrypt`
+    catch blocks explaining: rethrowing enables unit-test assertions on failure paths;
+    `subscribeDecryptRelay` swallows via `.catch(() => {})` to keep the subscriber alive.
+  - Files: `bot/src/watchers/decrypt-relay.ts`
+
+Test results after all fixes:
+- bot: 18 passing (unchanged)
+- oracle-relayer: 6 passing (unchanged)
+- compliance-backend: 14 passing (was 13, +1 from Fix 7)
+- contracts: 288 passing (unchanged)
+- All three packages build cleanly with `tsc` (zero errors).
+
 ### Phase 7 — Off-chain services (in progress)
 
 - **Added**: `contracts/test/Bot.Integration.test.ts` — Task 13 of Phase 7 plan.

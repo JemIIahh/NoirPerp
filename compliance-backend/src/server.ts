@@ -1,15 +1,20 @@
 import express, { Request, Response, NextFunction } from "express";
 import { isAddress } from "ethers";
+import pinoHttp from "pino-http";
 import { AllowlistTree } from "./tree.js";
 
 type AppOpts = {
   allowlistPath: string;
   adminApiKey: string;
+  logger?: any; // pino Logger; optional so tests can omit
 };
 
 export function buildApp(opts: AppOpts) {
   const tree = AllowlistTree.fromFile(opts.allowlistPath);
   const app = express();
+  if (opts.logger) {
+    app.use(pinoHttp({ logger: opts.logger }));
+  }
   app.use(express.json());
 
   app.get("/health", (_req, res) => {

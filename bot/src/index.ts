@@ -1,4 +1,5 @@
 import pino from "pino";
+import type { Logger } from "pino";
 import { loadConfig } from "./config.js";
 import { makeClients } from "./clients.js";
 import { TrackedSet } from "./state.js";
@@ -36,12 +37,16 @@ async function replayEvents(
   liquidations: TrackedSet<bigint>,
   triggers: TrackedSet<bigint>,
   batches: TrackedSet<DarkOrderRef>,
-  logger: any,
+  logger: Logger,
 ): Promise<void> {
   // Position lifecycle: subscribe via VAULT (corrected from plan — PositionOpened is on NoirVault)
   const opened = await clients.vaultRO.queryFilter("PositionOpened", fromBlock);
   const liquidated = await clients.perpRO.queryFilter("Liquidated", fromBlock);
-  const liqIds = new Set(liquidated.map((e: any) => e.args.positionId.toString()));
+  const closed = await clients.vaultRO.queryFilter("PositionClosed", fromBlock);
+  const liqIds = new Set([
+    ...liquidated.map((e: any) => e.args.positionId.toString()),
+    ...closed.map((e: any) => e.args.positionId.toString()),
+  ]);
   for (const ev of opened) {
     const id: bigint = (ev as any).args.positionId;
     if (!liqIds.has(id.toString())) liquidations.add(id);
@@ -86,10 +91,10 @@ async function replayEvents(
   );
 }
 
+const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
+
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const logger = pino({ level: process.env.LOG_LEVEL ?? "info" }) as any;
   const clients = makeClients(cfg.rpcUrl, cfg.wsUrl, cfg.botKey, cfg.deployment);
 
   const liquidations = new TrackedSet<bigint>();
@@ -98,6 +103,13 @@ async function main(): Promise<void> {
 
   const fromBlock = Number(process.env.START_BLOCK ?? 0);
   await replayEvents(clients, fromBlock, liquidations, triggers, batches, logger);
+  // MVP: events emitted in the brief window between replay tip and live
+  // WS subscription start are silently lost. Acceptable here because
+  // replay is fast (~1 block typically), and the bot's tick loop will
+  // catch any missed orders on the next tick (requestLiquidation /
+  // requestTrigger / requestBatchMatch are idempotent — engine reverts
+  // on inactive positions/orders without state change). Real-time
+  // guarantees deferred to Phase 9 (WS-then-replay-from-WS-block pattern).
 
   // CORRECTED: subscribeLiquidation takes (vaultRO, perpRO, tracked, logger) — 4 args per Task 8
   const unsubLiq = subscribeLiquidation(clients.vaultRO, clients.perpRO, liquidations, logger);
@@ -140,6 +152,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(err);
+  logger.fatal({ err: err?.message }, "fatal");
   process.exit(1);
 });

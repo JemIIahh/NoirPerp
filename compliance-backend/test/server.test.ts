@@ -65,6 +65,11 @@ describe("compliance-backend server", () => {
     expect(res.body.proof.length).toBeGreaterThan(0);
   });
 
+  it("POST /admin/remove without key returns 401", async () => {
+    const res = await request(app).post("/admin/remove").send({ address: ADDR_A });
+    expect(res.status).toEqual(401);
+  });
+
   it("POST /admin/remove drops entry", async () => {
     await request(app).post("/admin/add").set("x-api-key", KEY).send({ address: ADDR_A });
     await request(app).post("/admin/add").set("x-api-key", KEY).send({ address: ADDR_B });

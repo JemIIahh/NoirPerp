@@ -1,6 +1,5 @@
 import type { Contract } from "ethers";
-
-type Logger = { info: (msg: any, ...a: any[]) => void; error: (msg: any, ...a: any[]) => void };
+import type { Logger } from "pino";
 
 export type PublicDecryptFn = (handles: string[]) => Promise<{ abiEncodedClearValues: string; decryptionProof: string }>;
 
@@ -35,6 +34,9 @@ export async function handleSingleDecrypt(args: SingleDecryptArgs): Promise<void
     logger.info({ requestId: requestId.toString(), callbackName }, "decrypt-relay completed");
   } catch (err) {
     logger.error({ requestId: requestId.toString(), callbackName, err: (err as Error).message }, "decrypt-relay failed");
+    // Rethrow so unit tests can assert on failure;
+    // subscribeDecryptRelay swallows with `.catch(() => {})` to keep
+    // the subscriber alive across single-decrypt failures.
     throw err;
   }
 }
@@ -51,6 +53,9 @@ export async function handleBatchDecrypt(args: BatchDecryptArgs): Promise<void> 
     logger.info({ requestId: requestId.toString(), n: handles.length }, "batch decrypt-relay completed");
   } catch (err) {
     logger.error({ requestId: requestId.toString(), err: (err as Error).message }, "batch decrypt-relay failed");
+    // Rethrow so unit tests can assert on failure;
+    // subscribeDecryptRelay swallows with `.catch(() => {})` to keep
+    // the subscriber alive across single-decrypt failures.
     throw err;
   }
 }
