@@ -14,6 +14,16 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-25
 
+### Phase 7 — Off-chain services (in progress)
+
+- **Modified**: `contracts/scripts/deploy-local.ts` — writes
+  `contracts/deployments/local.json` after deploy. Off-chain services
+  (oracle-relayer, compliance-backend, bot) read this file to get
+  contract addresses + relayer/admin keys. `.gitignore` excludes the
+  generated file (regenerated per deploy).
+  **Files**: `contracts/scripts/deploy-local.ts`,
+  `contracts/deployments/.gitkeep`, `.gitignore`.
+
 ### Phase 6 complete ✅ (2026-04-25)
 
 - **DarkpoolEngine live** on local mock:

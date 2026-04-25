@@ -118,6 +118,34 @@ async function main() {
   await (await perp.setExecutor(await dark.getAddress(), true)).wait();
   console.log("DarkpoolEngine authorized as executor on PerpEngine");
 
+  // Write deployment artifacts for off-chain services (Phase 7)
+  const fs = await import("fs");
+  const path = await import("path");
+  const deploymentDir = path.resolve(__dirname, "..", "deployments");
+  fs.mkdirSync(deploymentDir, { recursive: true });
+  const deployment = {
+    network: "local",
+    chainId: 31337,
+    deployedAt: new Date().toISOString(),
+    contracts: {
+      MockERC7984: await token.getAddress(),
+      Compliance: await compliance.getAddress(),
+      Oracle: await oracle.getAddress(),
+      NoirVault: await vault.getAddress(),
+      PerpEngine: await perp.getAddress(),
+      AMMEngine: await amm.getAddress(),
+      LimitEngine: await limit.getAddress(),
+      DarkpoolEngine: await dark.getAddress(),
+    },
+    relayers: [relayerA.address, relayerB.address, relayerC.address],
+    admin: admin.address,
+  };
+  fs.writeFileSync(
+    path.join(deploymentDir, "local.json"),
+    JSON.stringify(deployment, null, 2),
+  );
+  console.log("Deployment artifacts written to deployments/local.json");
+
   console.log("");
   console.log("=== Phase 6 deploy complete ===");
 }

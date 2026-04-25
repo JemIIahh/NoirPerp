@@ -49,3 +49,6 @@ logs/
 # Foundry (future)
 cache_forge/
 broadcast/
+
+# Local deployment artifacts (regenerated per deploy-local run)
+contracts/deployments/local.json
