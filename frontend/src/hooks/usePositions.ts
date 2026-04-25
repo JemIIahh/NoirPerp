@@ -1,0 +1,81 @@
+import { useReadContracts, useReadContract } from "wagmi";
+import type { Abi } from "viem";
+import { parseAbi } from "viem";
+import { useDeployment } from "./useDeployment";
+import { VAULT_ABI } from "../lib/abis";
+
+// parseAbi handles simple entries fine; getPosition has a named-tuple return
+// that parseAbi can't parse (viem limitation). Split into two ABIs: one for
+// the simple entries (parseAbi), one JSON for getPosition.
+const SIMPLE_ABI = parseAbi([
+  "function nextPositionId() view returns (uint256)",
+]);
+
+const GET_POSITION_ABI: Abi = [
+  {
+    name: "getPosition",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "positionId", type: "uint256" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "owner",      type: "address" },
+          { name: "marketId",   type: "uint8"   },
+          { name: "isLong",     type: "bool"    },
+          { name: "active",     type: "bool"    },
+          { name: "size",       type: "bytes32" },
+          { name: "entryPrice", type: "bytes32" },
+          { name: "collateral", type: "bytes32" },
+        ],
+      },
+    ],
+  },
+];
+
+// Suppress unused import warning — VAULT_ABI kept for reference / other hooks.
+void (VAULT_ABI as unknown);
+
+export function usePositions(owner: `0x${string}` | undefined, limit = 50) {
+  const { data: deployment } = useDeployment();
+  const { data: nextId } = useReadContract({
+    address: deployment?.contracts.NoirVault, abi: SIMPLE_ABI, functionName: "nextPositionId",
+    query: { enabled: !!deployment, refetchInterval: 15_000 },
+  });
+  const total = nextId ? Number(nextId) : 0;
+  const fromId = Math.max(0, total - limit);
+  const ids = Array.from({ length: total - fromId }, (_, i) => BigInt(fromId + i));
+
+  const positions = useReadContracts({
+    contracts: ids.map((id) => ({
+      address: deployment?.contracts.NoirVault, abi: GET_POSITION_ABI,
+      functionName: "getPosition", args: [id],
+    })),
+    query: { enabled: !!deployment && !!owner && ids.length > 0 },
+  });
+
+  if (!owner || !positions.data) return [];
+
+  return ids.flatMap((id, idx) => {
+    const p = positions.data![idx]?.result as any;
+    if (!p) return [];
+    // viem decodes named tuple components as an object with named keys.
+    // Fall back to indexed access if .owner is missing (parseAbi edge case).
+    const posOwner: string = p.owner ?? p[0];
+    const marketId: number = p.marketId !== undefined ? Number(p.marketId) : Number(p[1]);
+    const isLong: boolean = p.isLong !== undefined ? p.isLong : p[2];
+    const active: boolean = p.active !== undefined ? p.active : p[3];
+    const size: `0x${string}` = p.size ?? p[4];
+    const entryPrice: `0x${string}` = p.entryPrice ?? p[5];
+    const collateral: `0x${string}` = p.collateral ?? p[6];
+
+    if (!posOwner || posOwner.toLowerCase() !== owner.toLowerCase()) return [];
+    if (!active) return [];
+    return [{
+      id, owner: posOwner, marketId, isLong,
+      sizeHandle: size, entryPriceHandle: entryPrice, collateralHandle: collateral,
+    }];
+  });
+}
