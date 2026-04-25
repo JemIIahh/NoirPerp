@@ -24,6 +24,14 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/scripts/deploy-local.ts`,
   `contracts/deployments/.gitkeep`, `.gitignore`.
 
+- **Added**: `oracle-relayer/` scaffold (package.json, tsconfig,
+  .env.example, .gitignore) + `chainlink.ts` mock price source +
+  `config.ts` env loader. 3 vitest tests passing.
+  **Files**: `oracle-relayer/package.json`, `oracle-relayer/tsconfig.json`,
+  `oracle-relayer/.env.example`, `oracle-relayer/.gitignore`,
+  `oracle-relayer/src/chainlink.ts`, `oracle-relayer/src/config.ts`,
+  `oracle-relayer/test/chainlink.test.ts`.
+
 ### Phase 6 complete ✅ (2026-04-25)
 
 - **DarkpoolEngine live** on local mock:

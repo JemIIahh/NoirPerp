@@ -1,0 +1,27 @@
+{
+  "name": "@noirperp/oracle-relayer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "NoirPerp 2-of-3 Chainlink relayer service — submits BTC/ETH/SOL prices to Oracle.sol",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.0",
+    "pino": "^9.0.0"
+  }
+}
