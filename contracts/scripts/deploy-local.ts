@@ -1,6 +1,6 @@
 import * as hre from "hardhat";
 
-/// Phase 4 local deploy script.
+/// Phase 5 local deploy script.
 /// Deploys:
 ///   1. MockERC7984 (USDCx mock for local testing)
 ///   2. Compliance (admin = signer[0], initial empty root)
@@ -9,6 +9,7 @@ import * as hre from "hardhat";
 ///   5. PerpEngine (admin = signer[0], registered on vault)
 ///   6. AMMEngine (admin = signer[0], registered on vault, oracle wired,
 ///                 liquidationPool repointed from PerpEngine)
+///   7. LimitEngine (admin = signer[0], registered on vault, oracle/perp/compliance wired)
 async function main() {
   const signers = await hre.ethers.getSigners();
   const [admin, relayerA, relayerB, relayerC] = signers;
@@ -77,8 +78,29 @@ async function main() {
   await (await perp.setLiquidationPool(await amm.getAddress())).wait();
   console.log("PerpEngine liquidationPool repointed to AMMEngine");
 
+  // 7. LimitEngine (Phase 5)
+  const LimitFactory = await hre.ethers.getContractFactory("LimitEngine");
+  const limit = await LimitFactory.deploy(await vault.getAddress(), admin.address);
+  await limit.waitForDeployment();
+  console.log("LimitEngine deployed:", await limit.getAddress());
+
+  await (await vault.registerEngine(await limit.getAddress())).wait();
+  console.log("LimitEngine registered as authorized engine on vault");
+
+  await (await limit.setOracle(await oracle.getAddress())).wait();
+  console.log("LimitEngine oracle set");
+
+  await (await limit.setPerp(await perp.getAddress())).wait();
+  console.log("LimitEngine perp set");
+
+  await (await limit.setCompliance(await compliance.getAddress())).wait();
+  console.log("LimitEngine compliance set");
+
+  await (await perp.setExecutor(await limit.getAddress(), true)).wait();
+  console.log("LimitEngine authorized as executor on PerpEngine");
+
   console.log("");
-  console.log("=== Phase 4 deploy complete ===");
+  console.log("=== Phase 5 deploy complete ===");
 }
 
 main().catch((err) => {

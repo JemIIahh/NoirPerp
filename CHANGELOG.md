@@ -67,6 +67,10 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/contracts/engines/LimitEngine.sol`,
   `contracts/test/LimitEngine.Trigger.test.ts`.
 
+- **Modified**: `deploy-local.ts` — deploys LimitEngine, registers it
+  on vault, wires oracle/perp/compliance, authorizes it as executor
+  on PerpEngine.
+
 - **Added**: `LimitEngine.placeStopOrTake` (TP=1 / SL=2) +
   `cancelOrder` (works for all types). TP/SL placements verify
   caller owns the position via `vault.allowPositionAccess`,
