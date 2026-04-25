@@ -46,6 +46,22 @@ solved design decisions; give future agents full context.
   `contracts/test/LimitEngine.Admin.test.ts`.
   13 new admin tests; full suite 228 passing.
 
+- **Added**: `LimitEngine.placeStopOrTake` (TP=1 / SL=2) +
+  `cancelOrder` (works for all types). TP/SL placements verify
+  caller owns the position via `vault.allowPositionAccess`,
+  inherit isLong + marketId from the position, store encrypted
+  trigger price (via `FHE.fromExternal` + `isSenderAllowed` guard +
+  `FHE.allowThis`). Zero handles (`FHE.asEuint64(0)`) used for
+  size/collateral unused fields. Cancel marks order inactive; checks
+  owner first then active (double-cancel from same owner reverts
+  `OrderNotActive`). Stub `_refundLimitCollateral` for Task 4.
+  New errors: `NotPositionOwner`, `PositionNotActive`,
+  `InvalidOrderType`, `NotOrderOwner`, `OrderNotActive`, `NotAllowed`.
+  New events: `OrderPlaced`, `OrderCancelled`. 10 unit tests;
+  full suite 238 passing.
+  **Files**: `contracts/contracts/engines/LimitEngine.sol`,
+  `contracts/test/LimitEngine.PlaceStopOrTake.test.ts`.
+
 ---
 
 ## 2026-04-24
