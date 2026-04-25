@@ -80,6 +80,31 @@ solved design decisions; give future agents full context.
   All 15 bot tests pass.
   **Files**: `bot/src/watchers/batch.ts`, `bot/test/batch.test.ts`, `CHANGELOG.md`.
 
+- **Added**: `bot/src/watchers/decrypt-relay.ts` + `bot/test/decrypt-relay.test.ts` — Task 11 of Phase 7 plan.
+  `handleSingleDecrypt({ engine, callbackName, requestId, handle, publicDecrypt, logger })` — wraps
+  single handle in a 1-element array, calls `publicDecrypt([handle])` to get
+  `{ abiEncodedClearValues, decryptionProof }` from KMS, then calls `engine[callbackName](requestId,
+  [handle], abiEncodedClearValues, decryptionProof)`. Logs and rethrows on any failure.
+  `handleBatchDecrypt({ engine, requestId, handles, publicDecrypt, logger })` — same flow but with N
+  handles; always calls `engine._onBatchDecided(requestId, handles, cleartexts, proof)`.
+  `subscribeDecryptRelay(perpRO, perpRW, limitRO, limitRW, ammRO, ammRW, darkRO, darkRW, publicDecrypt, logger)`
+  — wires all four engines' decrypt-request events to the appropriate handler; returns unsubscribe fn.
+  **Event-signature corrections applied** (4-arg events, corrected from plan's wrong 3-arg signatures):
+  - `PerpEngine.LiquidationRequested(requestId, positionId, keeper, underwaterHandle)` — keeper is 3rd
+    arg, handle is 4th (plan had 3 args with handle as 3rd). `onLiq` callback takes `_keeper` then
+    `underwaterHandle`.
+  - `LimitEngine.TriggerRequested(requestId, orderId, keeper, shouldTriggerHandle)` — same pattern.
+    `onTrig` callback takes `_keeper` then `shouldTriggerHandle`.
+  - `AMMEngine.WithdrawRequested(requestId, user, claimedShares, matchHandle)` — plaintext
+    `claimedShares` is 3rd arg, handle is 4th (plan had 3 args). `onWithdraw` callback takes
+    `_claimedShares: bigint` then `matchHandle`.
+  - `DarkpoolEngine.BatchMatchRequested(requestId, keeper, orderIds, handles)` — unchanged; matches plan.
+  3 vitest tests added: single-handle path calls publicDecrypt with [handle] then engine callback;
+  batch path calls publicDecrypt with all handles then _onBatchDecided; single path logs and rethrows
+  on publicDecrypt failure.
+  All 18 bot tests pass.
+  **Files**: `bot/src/watchers/decrypt-relay.ts`, `bot/test/decrypt-relay.test.ts`, `CHANGELOG.md`.
+
 - **Added**: `bot/src/watchers/trigger.ts` + `bot/test/trigger.test.ts` — Task 9 of Phase 7 plan.
   `subscribeTrigger(limitRO, tracked, logger)` subscribes to four on-chain events using corrected
   ABI event names and arg orders (documented in Task 7/8):
