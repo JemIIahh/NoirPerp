@@ -12,6 +12,20 @@ solved design decisions; give future agents full context.
 
 ---
 
+## 2026-04-25
+
+### Phase 6 — DarkpoolEngine (in progress)
+
+- **Added**: `contracts/contracts/engines/DarkpoolEngine.sol` (Task 1
+  scaffold — admin + struct + view accessor). Inherits `DecryptQueue`
+  for batch-match async callbacks. `DarkOrder` struct stores 3
+  encrypted fields (size, collateral, limitPrice) + plaintext metadata.
+  ~14 unit tests.
+  **Files**: `contracts/contracts/engines/DarkpoolEngine.sol`,
+  `contracts/test/DarkpoolEngine.Admin.test.ts`.
+
+---
+
 ## 2026-04-23
 
 ### Phase 5 — LimitEngine (in progress)
