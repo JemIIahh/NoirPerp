@@ -16,6 +16,39 @@ solved design decisions; give future agents full context.
 
 ### Phase 7 — Off-chain services (in progress)
 
+- **Added**: `bot/` scaffold — Task 7 of Phase 7 plan.
+  `package.json` (`@noirperp/bot`, type=module, deps: `@zama-fhe/relayer-sdk@0.4.1` exact,
+  `dotenv@^16.4`, `ethers@^6.13`, `pino@^9`; devDeps: `@types/node@^22`,
+  `tsx@^4.7`, `typescript@^5.5`, `vitest@^2`).
+  `tsconfig.json` (ES2022/ESNext/Bundler/strict — same shape as oracle-relayer).
+  `.env.example` (RPC_URL, WS_URL, DEPLOYMENT_PATH, BOT_PRIVKEY, TICK_INTERVAL_MS=15000, LOG_LEVEL=info).
+  `.gitignore` (node_modules, dist, .env, coverage).
+  `src/config.ts` — `loadConfig()` reads env + parses deployment JSON; `Deployment` type
+  matches local.json shape (network, chainId, contracts, relayers, admin).
+  `src/state.ts` — `TrackedSet<T>` generic (size, has, add, remove, list, groupBy).
+  `src/clients.ts` — `makeClients(rpcUrl, wsUrl, botKey, deployment)` returns
+  `{ rpc, ws, signer, vaultRO, perpRO, perpRW, limitRO, limitRW, ammRO, ammRW, darkRO, darkRW }`.
+  `test/state.test.ts` — 5 vitest tests (empty / add idempotent / remove / has / groupBy), all passing.
+  **ABI corrections vs. plan** (verified against actual contracts — future tasks MUST use these):
+  - `PositionOpened(uint256 positionId, address owner, uint8 marketId)` and
+    `PositionClosed(uint256 positionId)` are emitted by **NoirVault**, not PerpEngine.
+    Bot exposes `vaultRO` (not in plan) to subscribe to these events.
+  - `LimitEngine.OrderPlaced`: arg order is `orderType` BEFORE `marketId`
+    (plan had them reversed). Correct: `OrderPlaced(uint256 orderId, address owner, uint8 orderType, uint8 marketId)`.
+  - `LimitEngine` termination events are `Triggered(uint256 orderId, address user)` and
+    `TriggerNotMet(uint256 orderId)` — NOT `OrderTriggered` / `OrderMissed` as the plan stated.
+  - `LimitEngine.TriggerRequested` fourth arg is `bytes32 shouldTriggerHandle`
+    (plan had `bytes32 handle`).
+  - `AMMEngine.WithdrawRequested` has 4 args including plaintext `uint64 claimedShares`
+    before `bytes32 matchHandle` (plan omitted claimedShares).
+    Correct: `WithdrawRequested(uint256 requestId, address user, uint64 claimedShares, bytes32 matchHandle)`.
+  - `AMMEngine` fulfillment events are `LiquidityRemoved(uint256 requestId, address user, uint64 shares, uint64 payout)`
+    and `WithdrawRejected(uint256 requestId, address user)` (plan did not name these).
+  - `PerpEngine.LiquidationRequested` fourth arg is `bytes32 underwaterHandle`
+    (plan had `bytes32 handle`).
+  **Files**: `bot/package.json`, `bot/tsconfig.json`, `bot/.env.example`, `bot/.gitignore`,
+  `bot/src/config.ts`, `bot/src/state.ts`, `bot/src/clients.ts`, `bot/test/state.test.ts`.
+
 - **Modified**: `contracts/scripts/deploy-local.ts` — writes
   `contracts/deployments/local.json` after deploy. Off-chain services
   (oracle-relayer, compliance-backend, bot) read this file to get
