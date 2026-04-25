@@ -1,6 +1,51 @@
+@import url("https://rsms.me/inter/inter.css");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body { font-family: ui-sans-serif, system-ui, sans-serif; }
+@layer base {
+  html, body {
+    background: #050507;
+    color: #e8e8ee;
+    font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  /* Tabular numerics by default for any monospace block. */
+  .font-mono, code, pre {
+    font-feature-settings: "tnum", "zero", "ss01";
+  }
+
+  /* Custom selection color. */
+  ::selection {
+    background: rgba(124, 92, 255, 0.4);
+    color: #ffffff;
+  }
+
+  /* Scrollbar polish (webkit only). */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #1f1f2a; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2a2a3a; }
+}
+
+@layer components {
+  /* Faint dotted-grid background used on the Home hero. */
+  .bg-grid-dots {
+    background-image: radial-gradient(circle at 1px 1px, rgba(124, 92, 255, 0.10) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  /* Encrypted text treatment: monospace, dotted underline, slight blur. */
+  .encrypted-text {
+    filter: blur(3.5px);
+    letter-spacing: 0.05em;
+    user-select: none;
+  }
+}
+
+/* Legacy class kept for any direct consumers. */
 .font-mono-tight { font-feature-settings: "tnum"; }

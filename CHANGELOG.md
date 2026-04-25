@@ -14,6 +14,39 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-26
 
+### Phase 8 — Frontend (visual redesign across all 6 pages)
+
+- **Redesigned**: complete visual overhaul of the frontend (Home, Trade, Liquidity, Darkpool, Portfolio, Compliance) plus the shared shell (`Header`, `Layout`, `WalletGate`, `EncryptedValue`, `Form` primitives). Functional contracts and contract integrations preserved exactly — only presentation changed. Goal was to take the post-Phase-8 functional UI from "flat and bland" to a coherent, premium privacy-DEX visual system.
+  - **Why**: the Phase 8 frontend shipped functional but visually thin (single h1 + 2 buttons on Home, no hierarchy on dashboards, minimal affordances on encrypted state). The product needs to *feel* like a premium privacy DEX before public testnet — the FHE story should read at a glance, not require explanation.
+  - **Visual system**:
+    - Layered noir surfaces (`black #050507` → `gray #0d0d12` → `panel #101018` → `raised #161620` → `hover #1c1c28`) replacing the single flat `noir-gray`.
+    - Bluer borders (`line #1f1f2a`, `edge #2a2a3a`) so the violet accent reads as part of the same family.
+    - Extended palette: `accent2 #a78bfa` (lighter violet), `violet #5b3df5` (darker violet), `dim #8b8b9a` (mid-text), `amber #f5b041` (warnings).
+    - Inter font loaded from rsms.me/inter (system fallback).
+    - Custom shadows (`glow-violet`, `glow-soft`, `inset-line`), radial bg (`noir-radial`), grid-dot bg (`bg-grid-dots`), keyframe animations (`pulse-soft`, `fade-in`).
+  - **Encrypted-value treatment**: `EncryptedValue` now renders a lock icon + blurred dotted text in the encrypted state, and an unlock icon + crisp `tabular-nums` value in the revealed state, with a `fade-in` animation on reveal. Reveal button uses violet hover affordance.
+  - **Live oracle ticker on Trade**: added a 3-up market ticker reading `Oracle.getPrice(marketId)` for BTC/ETH/SOL (5s refetch), with live/stale dot indicator. Click a market card to switch the order form's selected market. Single-market price also surfaces in the order summary card.
+  - **Header**: sticky with backdrop-blur, hairline gradient accent strip, inline SVG logo mark, FHEVM-Sepolia chip, icon-decorated nav links with active-state pill.
+  - **Home**: hero (badge + headline with violet glow + meta strip) → markets ticker (3 perp cards) → 6-feature grid → 3-step "how it works" → final CTA card. Sells the privacy story without shipping marketing fluff.
+  - **Trade / Darkpool**: 2-column layout (form left, positions/orders right). Side toggle is now a pill switch, inputs have prefix/suffix slots, encrypted-field hints have lock icons, errors render in semantic alert blocks. Positions/orders render as interactive cards with market avatars + colored side badges.
+  - **Liquidity**: 3-stat header (totalShares plaintext, totalReserve plaintext, your shares encrypted-with-reveal) + dual form layout with clear sync (green badge) vs async (violet bot badge) distinction. Async withdraw includes an explicit two-step explainer block.
+  - **Portfolio**: 3-stat header (wallet/vault/AMM balances all with reveal) + position table with hover rows + copyable address chip in the section header.
+  - **Compliance**: status hero with allowlist/not-allowlisted gradient, copyable address card, copyable proof JSON inspector, side-by-side root + count health cards.
+  - **RainbowKit theme**: switched from default `darkTheme()` (blue) to `darkTheme({ accentColor: "#7c5cff" })` so the Connect button and modal match brand violet.
+  - **Bundle**: main app went from 271KB → 282KB gzipped (+11KB for `lucide-react` + `clsx` + Inter font CSS + redesign code). Within budget.
+  - **Did NOT add**: `framer-motion` (Tailwind keyframes + transitions cover the motion needs), CSS-in-JS runtime, state library, chart library.
+  - **Functional contracts preserved**:
+    - `WalletGate` still wraps every connected page.
+    - `useComplianceProof()` still returns `{root, allowlisted, proof}` and is still threaded into `openPosition` (7th arg) + `submitOrder` (4th arg).
+    - `useEncryptInput(contractAddr)(...vals)` unchanged.
+    - `EncryptedValue` props unchanged (`{handle, contractAddr, format?, hidden?}`); added optional `compact` for table-cell density.
+    - `usePositions(owner)` / `useDarkOrders(owner)` unchanged.
+    - `useDeployment()` unchanged.
+    - `LimitEngine` is still absent — no Limit Orders page added.
+  - **Files added (1)**: `frontend/src/components/ui.tsx` (Card, Stat, Badge, SectionHeader, Spinner, EmptyState — non-form primitives reused across all pages). Justified by the redesign scope listed in the user's request.
+  - **Files touched**: `frontend/index.html`, `frontend/tailwind.config.js`, `frontend/package.json` (added `lucide-react@^1.11`, `clsx@^2.1`), `frontend/src/index.css`, `frontend/src/providers.tsx`, `frontend/src/components/{Header,Layout,WalletGate,EncryptedValue,Form,ui}.tsx`, `frontend/src/pages/{Home,Trade,Liquidity,Darkpool,Portfolio,Compliance}.tsx`.
+  - **Verification**: `npm run lint` clean, `npm run build` clean (282KB gzipped main, all 4MB+ TFHE WASM still lazy-chunked). All routes render via headless-chrome smoke (home + WalletGate states for the 5 connected pages).
+
 ### Phase 8 — Frontend (post-merge hotfix)
 
 - **Fixed (Critical, runtime)**: `Darkpool` route crashed at module load with `InvalidParameterError: Invalid ABI parameter. Details: tuple(address owner, uint8 marketId, ...)` from abitype@1.2.3.
