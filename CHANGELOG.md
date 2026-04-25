@@ -32,6 +32,11 @@ solved design decisions; give future agents full context.
   `oracle-relayer/src/chainlink.ts`, `oracle-relayer/src/config.ts`,
   `oracle-relayer/test/chainlink.test.ts`.
 
+- **Added**: `oracle-relayer/src/relayer.ts` — `submitTick(oracleA, oracleB, logger, priceFn?)` iterates all 3 markets, calls `submitPrice` on both Contract instances, per-call try/catch logs error and continues without aborting the tick. Relayer B uses `t + 1` timestamp to satisfy Oracle.sol's distinct (relayer, timestamp) constraint. `oracle-relayer/src/index.ts` — main entrypoint: loads config, creates JsonRpcProvider + 2 Wallets + 2 Contract instances with minimal ORACLE_ABI, runs first tick immediately then `setInterval` with busy-flag re-entry guard to skip overlapping ticks.
+  3 new vitest tests (6 total) — all passing.
+  **Files**: `oracle-relayer/src/relayer.ts`, `oracle-relayer/src/index.ts`,
+  `oracle-relayer/test/relayer.test.ts`.
+
 ### Phase 6 complete ✅ (2026-04-25)
 
 - **DarkpoolEngine live** on local mock:
