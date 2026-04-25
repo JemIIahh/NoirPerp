@@ -62,6 +62,24 @@ solved design decisions; give future agents full context.
   All 8 bot tests pass.
   **Files**: `bot/src/watchers/liquidation.ts`, `bot/test/liquidation.test.ts`, `CHANGELOG.md`.
 
+- **Added**: `bot/src/watchers/trigger.ts` + `bot/test/trigger.test.ts` — Task 9 of Phase 7 plan.
+  `subscribeTrigger(limitRO, tracked, logger)` subscribes to four on-chain events using corrected
+  ABI event names and arg orders (documented in Task 7/8):
+  - `limitRO.on("OrderPlaced", (orderId, owner, orderType, marketId) => tracked.add(orderId))`
+    — 4 args with `orderType` BEFORE `marketId` (corrected from plan)
+  - `limitRO.on("Triggered", (orderId, user) => tracked.remove(orderId))`
+    — NOT `OrderTriggered` (corrected from plan)
+  - `limitRO.on("TriggerNotMet", (orderId) => log.info("kept"))`
+    — NOT `OrderMissed` (corrected from plan); order survived check, bot keeps probing
+  - `limitRO.on("OrderCancelled", (orderId, owner) => tracked.remove(orderId))`
+  Returns an unsubscribe function that removes all four listeners.
+  `runTriggerTick(limitRW, tracked, logger)` iterates `tracked.list()`, calls
+  `limitRW.requestTrigger(orderId)` + `await tx.wait()` per order, with per-call
+  try/catch that logs the error and continues to the next order.
+  3 vitest tests added (calls for each tracked orderId / does nothing when empty / logs and continues on failure).
+  All 11 bot tests pass.
+  **Files**: `bot/src/watchers/trigger.ts`, `bot/test/trigger.test.ts`, `CHANGELOG.md`.
+
 - **Modified**: `contracts/scripts/deploy-local.ts` — writes
   `contracts/deployments/local.json` after deploy. Off-chain services
   (oracle-relayer, compliance-backend, bot) read this file to get
