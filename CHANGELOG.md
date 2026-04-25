@@ -88,6 +88,23 @@ solved design decisions; give future agents full context.
   `compliance-backend/src/config.ts`, `compliance-backend/src/tree.ts`,
   `compliance-backend/test/tree.test.ts`.
 
+- **Skipped (deviation from plan Task 6)**: compliance-backend
+  spawn-based on-chain proof verification test.
+  **Why**: Same root cause as Task 3 deviation — FHEVM hardhat plugin
+  is incompatible with the spawn-based pattern.
+  **Alternative coverage**: `contracts/test/Compliance.test.ts`
+  (Phase 2, 16 tests) already verifies that the on-chain
+  `Compliance.verify` accepts proofs from
+  `@openzeppelin/merkle-tree`'s `StandardMerkleTree.of([[addr]], ["address"])`
+  — the same library + same call shape that `compliance-backend/src/tree.ts`
+  uses. Off-chain ↔ on-chain algorithm pinning is therefore proven by
+  the existing Phase 2 test, not by re-running it through a stand-alone
+  backend instance.
+  **What this means in practice**: Phase 9's Sepolia deploy will issue
+  proofs from compliance-backend's API + assert they pass on-chain via
+  `Compliance.verify`. That's the real cross-system smoke; a synthetic
+  one in Phase 7 would add no signal.
+
 ### Phase 6 complete ✅ (2026-04-25)
 
 - **DarkpoolEngine live** on local mock:
