@@ -24,6 +24,14 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/contracts/engines/DarkpoolEngine.sol`,
   `contracts/test/DarkpoolEngine.Admin.test.ts`.
 
+- **Added**: `DarkpoolEngine.submitOrder` + `cancelOrder`. Submit
+  imports 3 encrypted inputs (size, collateral, limitPrice) via
+  `SubmitOrderInputs` struct (stack-too-deep avoidance). Locks
+  collateral as escrow. Cancel refunds. Pattern mirrors
+  LimitEngine.placeLimit. 9 unit tests.
+  **Files**: `contracts/contracts/engines/DarkpoolEngine.sol`,
+  `contracts/test/DarkpoolEngine.Submit.test.ts`.
+
 ---
 
 ## 2026-04-23
