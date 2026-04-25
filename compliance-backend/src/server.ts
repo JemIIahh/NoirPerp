@@ -1,0 +1,57 @@
+import express, { Request, Response, NextFunction } from "express";
+import { isAddress } from "ethers";
+import { AllowlistTree } from "./tree.js";
+
+type AppOpts = {
+  allowlistPath: string;
+  adminApiKey: string;
+};
+
+export function buildApp(opts: AppOpts) {
+  const tree = AllowlistTree.fromFile(opts.allowlistPath);
+  const app = express();
+  app.use(express.json());
+
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", root: tree.root, count: tree.size });
+  });
+
+  app.get("/proof/:address", (req, res) => {
+    const addr = req.params.address;
+    if (!isAddress(addr)) {
+      res.status(400).json({ error: "invalid address" });
+      return;
+    }
+    res.json(tree.proof(addr));
+  });
+
+  const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
+    if (req.header("x-api-key") !== opts.adminApiKey) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    next();
+  };
+
+  app.post("/admin/add", requireAdmin, (req, res) => {
+    const addr = req.body?.address;
+    if (typeof addr !== "string" || !isAddress(addr)) {
+      res.status(400).json({ error: "invalid address" });
+      return;
+    }
+    const newRoot = tree.add(addr);
+    res.json({ added: true, newRoot, count: tree.size });
+  });
+
+  app.post("/admin/remove", requireAdmin, (req, res) => {
+    const addr = req.body?.address;
+    if (typeof addr !== "string" || !isAddress(addr)) {
+      res.status(400).json({ error: "invalid address" });
+      return;
+    }
+    const newRoot = tree.remove(addr);
+    res.json({ removed: true, newRoot, count: tree.size });
+  });
+
+  return app;
+}

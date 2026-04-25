@@ -59,6 +59,20 @@ solved design decisions; give future agents full context.
   integration tests must run inside the hardhat runtime via
   `contracts/test/*.ts` files.
 
+- **Added**: `compliance-backend/src/{server,index}.ts` — Express app
+  with `/health`, `/proof/:address`, `/admin/add`, `/admin/remove`
+  (admin routes gated by `x-api-key` header). `buildApp` factory takes
+  `{ allowlistPath, adminApiKey }` and returns the app without listening,
+  so supertest can drive it directly. Address validation uses
+  `ethers.isAddress`; invalid input returns 400; missing/wrong key returns
+  401. 7 supertest-driven vitest tests all passing (13 total).
+  **Deviation from plan**: end-to-end proof test pre-seeds ADDR_B before
+  ADDR_A so the tree has 2 leaves — OZ StandardMerkleTree returns `proof=[]`
+  for a single-leaf tree (leaf IS the root, no siblings), making the
+  `proof.length > 0` assertion unprovable with a single address.
+  **Files**: `compliance-backend/src/server.ts`, `compliance-backend/src/index.ts`,
+  `compliance-backend/test/server.test.ts`.
+
 - **Added**: `compliance-backend/` scaffold + `AllowlistTree` Merkle
   builder backed by `data/allowlist.json`. Reuses
   `@openzeppelin/merkle-tree` (same as contracts' tests, so proofs
