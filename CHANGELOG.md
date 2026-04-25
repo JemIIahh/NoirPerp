@@ -62,6 +62,24 @@ solved design decisions; give future agents full context.
   All 8 bot tests pass.
   **Files**: `bot/src/watchers/liquidation.ts`, `bot/test/liquidation.test.ts`, `CHANGELOG.md`.
 
+- **Added**: `bot/src/watchers/batch.ts` + `bot/test/batch.test.ts` — Task 10 of Phase 7 plan.
+  `subscribeBatch(darkRO, tracked, logger)` subscribes to three DarkpoolEngine events:
+  - `darkRO.on("OrderSubmitted", (orderId, owner, marketId) => tracked.add({ orderId, marketId: Number(marketId) }))`
+    — stores both orderId and marketId so the tick can group by market
+  - `darkRO.on("BatchSettled", (requestId, orderIds, shouldFires) => ...)` — iterates `orderIds`
+    from the event payload, finds all matching refs in tracked by orderId, and removes each
+  - `darkRO.on("OrderCancelled", (orderId, owner) => ...)` — same scan-and-remove by orderId
+  Returns an unsubscribe function that removes all three listeners.
+  `runBatchTick(darkRW, tracked, logger)` calls `tracked.groupBy(ref => ref.marketId)` to get a
+  `Map<marketId, DarkOrderRef[]>`, then for each (marketId, refs) pair chunks the refs array at
+  `MAX_BATCH_SIZE=10` and calls `darkRW.requestBatchMatch(chunk.map(r => r.orderId))` per chunk.
+  Per-chunk try/catch logs error and continues to next chunk/market (no abort on failure).
+  `MAX_BATCH_SIZE=10` enforced per Phase 6 HCU audit (5M sequential FHE op cap).
+  4 vitest tests added: groups by marketId (3 orders → 2 markets → 2 calls); caps at MAX_BATCH_SIZE
+  (15 orders → 2 calls of 10 + 5); does nothing when empty; logs and continues on per-batch failure.
+  All 15 bot tests pass.
+  **Files**: `bot/src/watchers/batch.ts`, `bot/test/batch.test.ts`, `CHANGELOG.md`.
+
 - **Added**: `bot/src/watchers/trigger.ts` + `bot/test/trigger.test.ts` — Task 9 of Phase 7 plan.
   `subscribeTrigger(limitRO, tracked, logger)` subscribes to four on-chain events using corrected
   ABI event names and arg orders (documented in Task 7/8):
