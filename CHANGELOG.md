@@ -32,6 +32,20 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/contracts/engines/PerpEngine.sol`,
   `contracts/test/PerpEngine.Executor.test.ts`.
 
+- **Added**: `contracts/contracts/engines/LimitEngine.sol` — Task 2
+  scaffold. Contract skeleton with admin pattern, `LimitOrder` struct
+  (encrypted `triggerPrice`, `size`, `collateral` fields), order-type
+  constants (`ORDER_TYPE_TP=1`, `ORDER_TYPE_SL=2`, `ORDER_TYPE_LIMIT=3`),
+  `getOrder` view, and admin functions (`transferAdmin`, `setOracle`,
+  `setPerp`). Inherits `DecryptQueue, ZamaEthereumConfig`. Constructor
+  rejects zero vault or zero admin. No order placement or trigger logic
+  yet (Tasks 3-5).
+  **Why**: Establish the contract scaffold and admin surface before
+  adding FHE order placement and async trigger flows.
+  **Files**: `contracts/contracts/engines/LimitEngine.sol`,
+  `contracts/test/LimitEngine.Admin.test.ts`.
+  13 new admin tests; full suite 228 passing.
+
 ---
 
 ## 2026-04-24
