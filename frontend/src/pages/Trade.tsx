@@ -72,7 +72,7 @@ function Inner() {
           </Field>
           <Field label="Size (units)"><Input type="text" value={size} onChange={(e) => setSize(e.target.value)} placeholder="10" /></Field>
           <Field label="Collateral (USDCx)"><Input type="text" value={collateral} onChange={(e) => setCollateral(e.target.value)} placeholder="1000" /></Field>
-          <Button onClick={onSubmit} disabled={isPending || !proof?.allowlisted}>
+          <Button onClick={onSubmit} disabled={isPending || !proof?.allowlisted || !size || !collateral}>
             {isPending ? "submitting…" : "Open position"}
           </Button>
           {!proof?.allowlisted && <p className="text-xs text-noir-red">Address not allowlisted (Compliance page).</p>}

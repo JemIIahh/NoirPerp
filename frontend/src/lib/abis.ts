@@ -42,11 +42,6 @@ export const AMM_ABI = [
   "function requestWithdraw(uint64 shares) external returns (uint256 requestId)",
 ] as const;
 
-export const LIMIT_ABI = [
-  "function getOrder(uint256 orderId) view returns (tuple(address owner, uint8 orderType, uint8 marketId, bool isLong, bool active, uint256 positionId, bytes32 triggerPrice, bytes32 size, bytes32 collateral))",
-  "function cancelOrder(uint256 orderId) external",
-] as const;
-
 export const DARK_ABI = [
   "function getOrder(uint256 orderId) view returns (tuple(address owner, uint8 marketId, bool isLong, bool active, bytes32 size, bytes32 collateral, bytes32 limitPrice))",
   "function nextOrderId() view returns (uint256)",

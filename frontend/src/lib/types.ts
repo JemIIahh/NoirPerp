@@ -8,7 +8,6 @@ export type Deployment = {
     NoirVault: `0x${string}`;
     PerpEngine: `0x${string}`;
     AMMEngine: `0x${string}`;
-    LimitEngine: `0x${string}`;
     DarkpoolEngine: `0x${string}`;
   };
   relayers: `0x${string}`[];

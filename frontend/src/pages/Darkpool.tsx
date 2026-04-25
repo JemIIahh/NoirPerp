@@ -93,7 +93,7 @@ function Inner() {
           <Field label="Limit price (encrypted)">
             <Input value={limitPrice} onChange={(e) => setLimitPrice(e.target.value)} placeholder="3000" />
           </Field>
-          <Button onClick={onSubmit} disabled={isPending || !proof?.allowlisted}>
+          <Button onClick={onSubmit} disabled={isPending || !proof?.allowlisted || !size || !collateral || !limitPrice}>
             Submit dark order
           </Button>
           {!proof?.allowlisted && (

@@ -59,6 +59,7 @@ export function usePositions(owner: `0x${string}` | undefined, limit = 50) {
   if (!owner || !positions.data) return [];
 
   return ids.flatMap((id, idx) => {
+    // viem infers `unknown` for JSON-ABI tuple results; narrowed immediately below.
     const p = positions.data![idx]?.result as any;
     if (!p) return [];
     // viem decodes named tuple components as an object with named keys.

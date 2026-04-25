@@ -14,6 +14,26 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-25
 
+### Phase 8 — Frontend (Tier 1 audit fixes)
+
+- **Fixed (Important)**: Empty-input submit-button guards on Trade and Darkpool pages.
+  - **Why**: Clicking "Open position" or "Submit dark order" with blank fields would pass empty-string state through `BigInt("")` conversion, causing a runtime throw inside the encrypt call. The button is now disabled until all required fields are non-empty.
+  - **What changed**: `Trade.tsx` button: added `|| !size || !collateral`. `Darkpool.tsx` button: added `|| !size || !collateral || !limitPrice`. Liquidity already had equivalent guards; no change needed there.
+  - **Files**: `frontend/src/pages/Trade.tsx`, `frontend/src/pages/Darkpool.tsx`.
+
+- **Fixed (Important)**: Removed `LIMIT_ABI` dead export and `LimitEngine` from the `Deployment.contracts` type.
+  - **Why**: Phase 8 scope is Trade, Liquidity, Darkpool, Portfolio, Compliance — no Limit Orders page. Per CLAUDE.md "no half-finished implementations", the unused ABI was removed. The `Deployment` type no longer references `LimitEngine`; the runtime deployment JSON still contains the key, but TypeScript's structural subtyping means extra properties are safely ignored.
+  - **Grep confirmed**: `grep -rn "LIMIT_ABI\|LimitEngine" src/` returns empty — no remaining references.
+  - **Files**: `frontend/src/lib/abis.ts`, `frontend/src/lib/types.ts`.
+
+- **Fixed (Minor)**: Added explanatory comments on `as any` casts in `usePositions` and `useDarkOrders`.
+  - **Why**: Audit flag — unexplained `as any` casts look suspicious. Comment clarifies that viem infers `unknown` for JSON-ABI tuple results and that the cast is safe because the fields are narrowed immediately below.
+  - **Files**: `frontend/src/hooks/usePositions.ts`, `frontend/src/hooks/useDarkOrders.ts`.
+
+- **Fixed (Minor)**: Added spec §6 staleness-check deferral TODO comment in `Compliance.tsx`.
+  - **Why**: Spec §6 error-handling table requires warning users when the merkleRoot is older than 7 days. Implementation requires either extending the compliance-backend `/health` response with `rootUpdatedAt` or adding an on-chain read for `Compliance.rootUpdatedAt()`. Deferred to Phase 9; comment documents the deferral and the two implementation paths.
+  - **Files**: `frontend/src/pages/Compliance.tsx`.
+
 ### Phase 8 — Frontend (in progress)
 
 - **Added**: `frontend/` Vite + React 18 + TypeScript + Tailwind scaffold. Dependencies pinned: wagmi 2, viem 2, @tanstack/react-query 5, @rainbow-me/rainbowkit 2, @zama-fhe/relayer-sdk 0.4.1 (EXACT pin), react-router-dom 6. Tailwind theme `noir-{black,gray,line,mute,white,accent,green,red}` matches the dark-pool brand. Build clean, dev server boots on 127.0.0.1:5173.

@@ -62,6 +62,7 @@ export function useDarkOrders(owner: `0x${string}` | undefined, limit = 50) {
   if (!owner || !orders.data) return [];
 
   return ids.flatMap((id, idx) => {
+    // viem infers `unknown` for JSON-ABI tuple results; narrowed immediately below.
     const o = orders.data![idx]?.result as any;
     if (!o) return [];
     // viem decodes named tuple components as an object with named keys.

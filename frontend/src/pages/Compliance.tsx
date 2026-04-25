@@ -50,6 +50,11 @@ function Inner() {
         </Section>
       )}
 
+      {/* TODO(Phase 9): per spec §6 error-handling table, warn user if compliance
+          merkleRoot is older than 7 days. Requires either: (a) extending the
+          compliance-backend /health response to include rootUpdatedAt, OR
+          (b) adding a useReadContract hook that reads Compliance.rootUpdatedAt()
+          directly from chain. Deferred — not blocking Phase 8 acceptance. */}
       <Section label="Backend health">
         {health && (
           <div className="text-sm text-noir-mute">
