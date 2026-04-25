@@ -1,6 +1,6 @@
 import * as hre from "hardhat";
 
-/// Phase 5 local deploy script.
+/// Phase 6 local deploy script.
 /// Deploys:
 ///   1. MockERC7984 (USDCx mock for local testing)
 ///   2. Compliance (admin = signer[0], initial empty root)
@@ -10,6 +10,8 @@ import * as hre from "hardhat";
 ///   6. AMMEngine (admin = signer[0], registered on vault, oracle wired,
 ///                 liquidationPool repointed from PerpEngine)
 ///   7. LimitEngine (admin = signer[0], registered on vault, oracle/perp/compliance wired)
+///   8. DarkpoolEngine (admin = signer[0], registered on vault, oracle/perp/compliance wired,
+///                      authorized as executor on PerpEngine)
 async function main() {
   const signers = await hre.ethers.getSigners();
   const [admin, relayerA, relayerB, relayerC] = signers;
@@ -99,8 +101,25 @@ async function main() {
   await (await perp.setExecutor(await limit.getAddress(), true)).wait();
   console.log("LimitEngine authorized as executor on PerpEngine");
 
+  // 8. DarkpoolEngine (Phase 6)
+  const DarkFactory = await hre.ethers.getContractFactory("DarkpoolEngine");
+  const dark = await DarkFactory.deploy(await vault.getAddress(), admin.address);
+  await dark.waitForDeployment();
+  console.log("DarkpoolEngine deployed:", await dark.getAddress());
+
+  await (await vault.registerEngine(await dark.getAddress())).wait();
+  console.log("DarkpoolEngine registered as authorized engine on vault");
+
+  await (await dark.setOracle(await oracle.getAddress())).wait();
+  await (await dark.setPerp(await perp.getAddress())).wait();
+  await (await dark.setCompliance(await compliance.getAddress())).wait();
+  console.log("DarkpoolEngine oracle/perp/compliance set");
+
+  await (await perp.setExecutor(await dark.getAddress(), true)).wait();
+  console.log("DarkpoolEngine authorized as executor on PerpEngine");
+
   console.log("");
-  console.log("=== Phase 5 deploy complete ===");
+  console.log("=== Phase 6 deploy complete ===");
 }
 
 main().catch((err) => {

@@ -48,6 +48,11 @@ solved design decisions; give future agents full context.
   **Files**: `contracts/contracts/engines/DarkpoolEngine.sol`,
   `contracts/test/DarkpoolEngine.BatchMatch.test.ts`.
 
+- **Modified**: `contracts/scripts/deploy-local.ts` — deploys
+  DarkpoolEngine + wires oracle/perp/compliance + authorizes as
+  executor on PerpEngine. Banner bumped to Phase 6.
+  **Files**: `contracts/scripts/deploy-local.ts`.
+
 ---
 
 ## 2026-04-23
