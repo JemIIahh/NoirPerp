@@ -16,6 +16,31 @@ solved design decisions; give future agents full context.
 
 ### Phase 7 — Off-chain services (in progress)
 
+- **Added**: `contracts/test/Bot.Integration.test.ts` — Task 13 of Phase 7 plan.
+  Single cross-service integration smoke test that proves `runLiquidationTick` (Task 8)
+  drives a full liquidation flow end-to-end against the real PerpEngine in the FHEVM
+  hardhat mock runtime. Deploys MockERC7984, NoirVault, Oracle, Compliance, PerpEngine;
+  opens a 10-ETH long for Alice at price 3000 with 1000 collateral; crashes price to 2990
+  (10% loss > 5% maintenance threshold); creates a `TrackedSet` with position 0; calls
+  `runLiquidationTick(engineAsKeeper, tracked, silentLogger)` which invokes
+  `requestLiquidation(0)` on-chain; reads `LiquidationRequested` event via
+  `engine.queryFilter`; calls `hre.fhevm.publicDecrypt([underwaterHandle])` to get
+  `{abiEncodedClearValues, decryptionProof}`; calls `_onLiquidationDecided` callback; and
+  asserts position is inactive and `Liquidated` event was emitted.
+  Result: 1 passing (142ms). Full suite: 288 passing (287 prior + 1 new). No regressions.
+
+  Cross-package wiring:
+  - bot/ is ESM; contracts/ is CJS. Dynamic `import()` used to load bot's pre-built dist.
+  - TypeScript (CJS tsconfig) choked on `(import as any)` syntax — not valid TS.
+  - Resolved by using `await import(...) as Record<string, unknown>` type assertion
+    with a `/* webpackIgnore: true */` comment to silence bundler warnings.
+  - Absolute path to `bot/dist/` derived via `path.resolve(__dirname, "../../bot/dist")`
+    to avoid CWD ambiguity at test invocation time.
+  - Tasks 3 + 6 spawn-based variants were dropped (FHEVM-spawn incompatibility);
+    this in-process dynamic import approach succeeded cleanly.
+
+  **Files**: `contracts/test/Bot.Integration.test.ts`, `CHANGELOG.md`.
+
 - **Added**: `bot/src/index.ts` — main bot entrypoint (Task 12 of Phase 7 plan).
   Wires `loadConfig`, `makeClients`, `TrackedSet`, all four watcher subscribe/tick
   functions, and `makePublicDecrypt`. Includes `replayEvents` that bootstraps tracked
