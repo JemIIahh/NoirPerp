@@ -15,6 +15,18 @@ export function buildApp(opts: AppOpts) {
   if (opts.logger) {
     app.use(pinoHttp({ logger: opts.logger }));
   }
+  // Permissive CORS — read endpoints (`/health`, `/proof/:address`) are
+  // public; admin endpoints are gated separately by `x-api-key` header.
+  app.use((_req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, x-api-key");
+    if (_req.method === "OPTIONS") {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
   app.use(express.json());
 
   app.get("/health", (_req, res) => {
