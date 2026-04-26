@@ -285,6 +285,13 @@ contract LimitEngine is DecryptQueue, ZamaEthereumConfig {
     /// @notice Bot-callable. Computes whether the order should fire by
     ///         comparing the current oracle price to the encrypted
     ///         trigger, then requests Gateway decryption of the bool.
+    /// @dev SPEC DEVIATION (§5.2 "$ZAMA fee"): this function is non-payable.
+    ///      The spec calls for a $ZAMA decrypt fee. FHEVM v0.11.1 exposes
+    ///      no on-chain fee API and Sepolia Gateway decrypts are free-tier;
+    ///      a speculative `payable` here would not match the future API
+    ///      shape if Zama enables paid decrypts. Resolution path: contract
+    ///      upgrade integrating the actual fee mechanism. See CHANGELOG
+    ///      2026-04-26 "$ZAMA fee question" for the full reasoning.
     function requestTrigger(uint256 orderId) external returns (uint256 requestId) {
         if (oracle == address(0)) revert OracleNotSet();
         if (perp == address(0)) revert PerpNotSet();

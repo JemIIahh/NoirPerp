@@ -148,6 +148,13 @@ contract AMMEngine is DecryptQueue, ZamaEthereumConfig {
     ///         the user's encrypted share balance to the plaintext claim,
     ///         marks it publicly decryptable, emits event, and enqueues
     ///         pending state for the callback.
+    /// @dev SPEC DEVIATION (§5.2 "$ZAMA fee"): this function is non-payable.
+    ///      The spec calls for a $ZAMA decrypt fee. FHEVM v0.11.1 exposes
+    ///      no on-chain fee API and Sepolia Gateway decrypts are free-tier;
+    ///      a speculative `payable` here would not match the future API
+    ///      shape if Zama enables paid decrypts. Resolution path: contract
+    ///      upgrade integrating the actual fee mechanism. See CHANGELOG
+    ///      2026-04-26 "$ZAMA fee question" for the full reasoning.
     /// @dev User must decrypt their share balance client-side first
     ///      (via FHE.userDecrypt) to know the exact claimedShares value.
     ///      If wrong, the callback rejects.

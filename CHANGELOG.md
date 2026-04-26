@@ -14,6 +14,33 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-26
 
+### Phase 9 — Sepolia deploy preparation (plan + script + NatSpec deviations + env)
+
+Pre-deploy bookkeeping ahead of the Sepolia bring-up. No new contract logic; all four diffs are code that must land *before* the first Sepolia tx fires per `PROGRESS.md` change-management rules.
+
+- **Phase 9 plan**: `docs/plans/2026-04-26-phase-9-integration-audit.md`. Same shape as the prior 8 phase plans. Covers 16 tasks: NatSpec deviations (Task 1, this commit), `deploy-sepolia.ts` (Task 2, this commit), env updates (Task 3, this commit), user-action funding (Task 4), deploy + verify + setup (Tasks 5–7), compliance root sync (Task 8), frontend redeploy (Task 9), live smoke (Task 10), then audit gates 11–16 (Slither, Mythril, OZ FHEVM checklist, Foundry invariants + fuzz, HCU benchmarks, per-contract sign-off doc). Tasks 1–10 are deploy-blocking; 11–16 are tick-blocking but can run in parallel after deploy.
+
+- **`$ZAMA fee` deviation (spec §5.2) — option (b), NatSpec on each function.** Four async entry points are non-payable: `PerpEngine.requestLiquidation`, `AMMEngine.requestWithdraw`, `LimitEngine.requestTrigger`, `DarkpoolEngine.requestBatchMatch`. Each got a `/// @dev SPEC DEVIATION (§5.2 "$ZAMA fee"):` block above the existing NatSpec.
+  - **Why option (b) over option (a) "make them payable"**: FHEVM v0.11.1 exposes no on-chain fee API. A speculative `payable` would not match the future API shape if Zama enables paid decrypts (likely a fee-token transfer or an oracle-priced parameter on `requestDecryption`, not an ETH `msg.value` forward), and would either trap dust ETH in the contract or require picking an arbitrary fee receiver address. Three of the four entry points are bot-triggered, so even the economic story "user pays fee via msg.value" doesn't hold (the bot would be paying its own ETH, not the user's vault balance). Option (b) is reversible: when paid decrypts ship, a contract upgrade integrates the actual API. Option (a) would have to be undone first.
+  - **What option (b) discharges**: the pre-deploy audit subagent's specific finding — *"the deviation IS documented, but in Phase 7's off-chain section rather than in the contract NatSpec where an auditor would spot it."* Now an auditor reading `requestLiquidation` finds the spec deviation inline, with a CHANGELOG pointer for the full reasoning.
+  - **Files**: `contracts/contracts/engines/{PerpEngine,AMMEngine,LimitEngine,DarkpoolEngine}.sol`.
+
+- **`scripts/deploy-sepolia.ts`**: new deploy script for Ethereum Sepolia (chainId 11155111). Mirrors `deploy-local.ts` step-by-step except for three required differences:
+  1. **No `MockERC7984` deploy.** Per `CLAUDE.md` token rule, NoirVault wires to Zama's pre-deployed `cUSDCMock` at `0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639`. Hardcoded constant at the top of the script.
+  2. **Three relayer addresses come from env** (`RELAYER_A_ADDRESS`, `RELAYER_B_ADDRESS`, `RELAYER_C_ADDRESS`). Script throws a clear error if any is unset.
+  3. **Writes `deployments/sepolia.json`** with `chainId: 11155111`, no `MockERC7984` entry, includes the canonical cUSDCMock address under `contracts.cUSDCMock` for clarity. Refuses to overwrite an existing artifact (Sepolia deploys are not redoable).
+  - Also: pre-flight checks that the connected network actually IS chainId 11155111 (catches the easy mistake of forgetting `--network sepolia`); pre-flight balance check (deployer needs ≥ 0.1 Sepolia ETH); script tail prints the 7 `npx hardhat verify` commands ready to copy-paste for Etherscan.
+  - **Files**: `contracts/scripts/deploy-sepolia.ts`.
+
+- **`.env.example` updates** for the bring-up:
+  - `contracts/.env.example`: added `RELAYER_A/B/C_ADDRESS`, expanded comments around `PRIVATE_KEY` (~0.5 Sepolia ETH needed), pointed `SEPOLIA_RPC_URL` at `https://ethereum-sepolia-rpc.publicnode.com` per user spec.
+  - `frontend/.env.example`: replaced the half-finished commented Sepolia block with a fleshed-out one covering `VITE_DEPLOYMENT_NETWORK=sepolia`, `VITE_CHAIN_ID=11155111`, `VITE_RPC_URL`, public-host TLS requirement for `VITE_COMPLIANCE_API_URL`, and `VITE_WC_PROJECT_ID` (free at cloud.walletconnect.com — required for mobile QR; without it, frontend falls back to injected-only).
+  - **Files**: `contracts/.env.example`, `frontend/.env.example`.
+
+- **No behavior changes**: `npx hardhat compile` clean, `npx hardhat test` selective smoke green (22 passing across the 4 affected engines' async paths). The 326-test suite is untouched.
+
+- **What's NOT in this commit, blocking Sepolia deploy**: (a) user-generated + funded deployer key + 3 relayer EOAs (Phase 9 plan Task 4 — out of agent scope); (b) the actual `npx hardhat run scripts/deploy-sepolia.ts --network sepolia` call (Task 5); (c) the `setup-sepolia.ts` cUSDCMock-mint + oracle-price-commit script (Task 7 — write after deploy when we know the contract addresses); (d) public hosting for `compliance-backend` (Task 8); (e) Tier 2 audit (Tasks 11–16). All staged for the next session.
+
 ### Phase 8 — Frontend (mint palette · landing redesign · multi-wallet picker)
 
 Post-Phase-8 polish session before Phase 9 Sepolia bring-up. Landing got a structural redesign; the brand accent moved from violet → mint; wallet connect was rebuilt to support OKX (and any injected wallet) cleanly.

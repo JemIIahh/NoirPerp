@@ -202,6 +202,13 @@ contract PerpEngine is DecryptQueue, ZamaEthereumConfig {
     /// @notice Bot-callable. Evaluates margin health on ciphertexts; marks
     ///         the `underwater` ebool as publicly decryptable so off-chain
     ///         relayer can decrypt + call back `_onLiquidationDecided`.
+    /// @dev SPEC DEVIATION (§5.2 "$ZAMA fee"): this function is non-payable.
+    ///      The spec calls for a $ZAMA decrypt fee. FHEVM v0.11.1 exposes
+    ///      no on-chain fee API and Sepolia Gateway decrypts are free-tier;
+    ///      a speculative `payable` here would not match the future API
+    ///      shape if Zama enables paid decrypts. Resolution path: contract
+    ///      upgrade integrating the actual fee mechanism. See CHANGELOG
+    ///      2026-04-26 "$ZAMA fee question" for the full reasoning.
     /// @dev In this version of @fhevm/solidity (0.11.1), FHE.requestDecryption
     ///      does not exist. The async-decrypt pattern is:
     ///        1. FHE.makePubliclyDecryptable(underwater) — marks handle

@@ -219,6 +219,13 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
     ///         should fill at current oracle price, marks each ebool
     ///         publicly decryptable, and emits the handle list for relayer
     ///         pickup.
+    /// @dev SPEC DEVIATION (§5.2 "$ZAMA fee"): this function is non-payable.
+    ///      The spec calls for a $ZAMA decrypt fee. FHEVM v0.11.1 exposes
+    ///      no on-chain fee API and Sepolia Gateway decrypts are free-tier;
+    ///      a speculative `payable` here would not match the future API
+    ///      shape if Zama enables paid decrypts. Resolution path: contract
+    ///      upgrade integrating the actual fee mechanism. See CHANGELOG
+    ///      2026-04-26 "$ZAMA fee question" for the full reasoning.
     /// @dev HCU budget: each order in a batch costs ~152k HCU for the
     ///      le/ge fill check plus ~337k HCU for the safeAdd-based escrow
     ///      refund in the callback (~489k per order total). The 5M
