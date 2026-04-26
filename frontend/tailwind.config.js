@@ -11,20 +11,27 @@ export default {
           raised:  "#161620",
           hover:   "#1c1c28",
 
-          // Borders / dividers (slightly bluer than pure neutral so the
-          // violet accent reads as part of the same family).
-          line:    "#1f1f2a",
-          edge:    "#2a2a3a",
+          // Borders / dividers (slightly cooler than pure neutral so the
+          // mint accent reads as part of the same family).
+          line:    "#1e2a28",
+          edge:    "#28403b",
 
-          // Text scale.
-          mute:    "#6b6b7a",
-          dim:     "#8b8b9a",
-          white:   "#e8e8ee",
+          // Text scale. The white token is intentionally cream — it
+          // matches the off-white globe disc on Home so the page reads
+          // as one tonal family (warm whites on cool noir blacks).
+          mute:    "#6f6a5e",
+          dim:     "#a39b89",
+          white:   "#f3ede0",
+          cream:   "#f3ede0",
 
-          // Brand accent + neighbors.
-          accent:  "#7c5cff",
-          accent2: "#a78bfa",
-          violet:  "#5b3df5",
+          // Brand accent + neighbors. Mint-teal — replaces the prior
+          // violet palette. Token names kept stable so all existing
+          // class refs (text-noir-accent, bg-noir-accent, ...) continue
+          // to work; the legacy `violet` token now holds the deeper
+          // mint variant used for hover/active states.
+          accent:  "#5eead4",
+          accent2: "#99f6e4",
+          violet:  "#2dd4bf",
 
           // Semantic.
           green:   "#3ddc84",
@@ -42,7 +49,18 @@ export default {
           "Segoe UI",
           "sans-serif",
         ],
+        // Geometric display face used for h1/h2 and the brand wordmark.
+        // Space Grotesk reads as "premium tech" without leaning crypto-
+        // generic; pairs cleanly with Inter for body copy.
+        display: [
+          "Space Grotesk",
+          "Inter",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif",
+        ],
         mono: [
+          "JetBrains Mono",
           "ui-monospace",
           "SFMono-Regular",
           "Menlo",
@@ -52,13 +70,13 @@ export default {
         ],
       },
       boxShadow: {
-        "glow-violet": "0 0 0 1px rgba(124, 92, 255, 0.25), 0 8px 32px -8px rgba(124, 92, 255, 0.35)",
-        "glow-soft":   "0 0 0 1px rgba(124, 92, 255, 0.18)",
+        "glow-violet": "0 0 0 1px rgba(94, 234, 212, 0.28), 0 8px 32px -8px rgba(94, 234, 212, 0.40)",
+        "glow-soft":   "0 0 0 1px rgba(94, 234, 212, 0.18)",
         "inset-line":  "inset 0 1px 0 0 rgba(255, 255, 255, 0.04)",
       },
       backgroundImage: {
-        "noir-grid":   "radial-gradient(circle at 1px 1px, rgba(124,92,255,0.08) 1px, transparent 0)",
-        "noir-radial": "radial-gradient(ellipse at top, rgba(124,92,255,0.18), transparent 60%)",
+        "noir-grid":   "radial-gradient(circle at 1px 1px, rgba(94,234,212,0.08) 1px, transparent 0)",
+        "noir-radial": "radial-gradient(ellipse at top, rgba(94,234,212,0.14), transparent 60%)",
       },
       keyframes: {
         "pulse-soft": {

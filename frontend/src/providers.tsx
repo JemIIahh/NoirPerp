@@ -7,14 +7,16 @@ import { wagmiConfig } from "./lib/wagmi";
 
 const queryClient = new QueryClient();
 
-// Match RainbowKit's chrome to the NoirPerp violet so the Connect button,
-// modal, and chain switcher feel native to the app.
+// RainbowKit chrome — cream-on-noir matching the hero CTA. Mint is
+// reserved as the secondary cue (orbits, encrypted-state badges,
+// hover states), so the connect button stays in the same typographic
+// "voice" color as the hero ("Open trading" button + headline).
 const noirRainbowTheme = darkTheme({
-  accentColor:        "#7c5cff",
-  accentColorForeground: "#ffffff",
-  borderRadius:       "medium",
-  fontStack:          "system",
-  overlayBlur:        "small",
+  accentColor:           "#f3ede0",
+  accentColorForeground: "#050507",
+  borderRadius:          "medium",
+  fontStack:             "system",
+  overlayBlur:           "small",
 });
 
 export function Providers({ children }: { children: ReactNode }) {

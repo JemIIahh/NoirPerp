@@ -1,4 +1,5 @@
 @import url("https://rsms.me/inter/inter.css");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -7,11 +8,19 @@
 @layer base {
   html, body {
     background: #050507;
-    color: #e8e8ee;
+    color: #f3ede0;
     font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "ss01", "cv11";
+  }
+
+  /* Display font for headings and the wordmark. Set via class
+     `font-display` rather than auto-applied so prose-density text
+     (paragraphs, labels, inputs) stays in Inter. */
+  .font-display {
+    font-feature-settings: "ss02", "ss05";
+    letter-spacing: -0.02em;
   }
 
   /* Tabular numerics by default for any monospace block. */
@@ -21,21 +30,21 @@
 
   /* Custom selection color. */
   ::selection {
-    background: rgba(124, 92, 255, 0.4);
-    color: #ffffff;
+    background: rgba(94, 234, 212, 0.4);
+    color: #050507;
   }
 
   /* Scrollbar polish (webkit only). */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #1f1f2a; border-radius: 8px; }
-  ::-webkit-scrollbar-thumb:hover { background: #2a2a3a; }
+  ::-webkit-scrollbar-thumb { background: #1e2a28; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #28403b; }
 }
 
 @layer components {
   /* Faint dotted-grid background used on the Home hero. */
   .bg-grid-dots {
-    background-image: radial-gradient(circle at 1px 1px, rgba(124, 92, 255, 0.10) 1px, transparent 0);
+    background-image: radial-gradient(circle at 1px 1px, rgba(94, 234, 212, 0.10) 1px, transparent 0);
     background-size: 24px 24px;
   }
 

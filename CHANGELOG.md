@@ -14,6 +14,50 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-26
 
+### Phase 8 — Frontend (mint palette · landing redesign · multi-wallet picker)
+
+Post-Phase-8 polish session before Phase 9 Sepolia bring-up. Landing got a structural redesign; the brand accent moved from violet → mint; wallet connect was rebuilt to support OKX (and any injected wallet) cleanly.
+
+- **Brand color: violet → mint.** All `noir-accent` / `noir-accent2` / `noir-violet` Tailwind tokens repointed (`#5eead4` / `#99f6e4` / `#2dd4bf`). Box-shadow + radial-gradient utilities re-tinted (`shadow-glow-violet` and `bg-noir-radial` keep their *names* but now serve mint rgba — pragmatic rename later, semantically misnamed today). `noir-white` token redefined as `#f3ede0` cream so all body text + headings shift to a warm-white voice that matches the off-white globe disc on Home. `noir-dim` / `noir-mute` tonally rebalanced to sit on the cream side. CSS `::selection`, `::-webkit-scrollbar`, `.bg-grid-dots`, and `<html>/<body>` base color also updated.
+  - **Why**: user feedback — "we need to replace purple entirely to another color". Mint pairs cleanly with the planned monochrome globe centerpiece without leaning crypto-generic.
+  - **Files touched**: `frontend/tailwind.config.js`, `frontend/src/index.css`.
+
+- **Display font added**: Space Grotesk (h1/h2/wordmark/nav) + JetBrains Mono (data + code) loaded from Google Fonts CDN. Applied via `font-display` class (heading-only) so prose-density text stays in Inter. Custom `font-feature-settings` (`ss02`, `ss05`) and `letter-spacing: -0.02em` on display class.
+  - **Files touched**: `frontend/src/index.css`, `frontend/tailwind.config.js`.
+
+- **Landing page rewritten**: dropped the 5-section wall (hero badge + markets ticker + 6-feature grid + 3-step explainer + final-CTA card) for a single-screen hero — spinning globe centerpiece, two-line cream headline, 2 CTAs, 4 keyword chip strip pinned near the footer. Vertical rhythm tuned across 3 user-feedback iterations: globe→headline 40px, headline→tagline 24px, tagline→CTAs 40px, CTAs→chip-strip 192px (`mt-48`), chip-strip→footer ~48px. Natural-flow layout (no `min-h + flex-1` spacer, since that collapsed on shorter viewports and pushed chips flush against the buttons).
+  - **Why**: user feedback — "too wordy", "different colors everywhere", "unorganized", "feels short and weird".
+  - **Files touched**: `frontend/src/pages/Home.tsx` (330 → ~95 lines, removed `Markets`/`Features`/`HowItWorks`/`FinalCta` sections + `MetaItem` helper).
+
+- **Spinning globe component added**: `frontend/src/components/SpinningGlobe.tsx`. Real country outlines via `world-atlas` 110m TopoJSON + `d3-geo`'s orthographic projection rotated by lambda over time, drawn to `<canvas>` via `path.context()` (cheaper than recomputing SVG path strings ~60×/sec for ~200 polygons). Off-white disc (`#f3ede0`) with deep-noir country fills (`#0e1018`) + hairline borders. Three-orbit "whirl" SVG layered above the canvas: rings at 34/41/48% radii spinning at 9s/15s/24s, alternating cw/ccw. Each ring carries one BTC/ETH/SOL satellite — small mint-bordered chip with the crypto glyph inside (`₿` / `Ξ` / `◎`). Glyph uses a counter-rotation animation at the same period so the symbol stays upright while the satellite traces the orbit.
+  - **Why**: user spec — "Prototype a loading indicator that shows the globe spinning with real country outlines, full monochrome, no text, centered on off-white background. Add a whirl effect around it. Crypto currency rotating alongside it would be nice."
+  - **New deps**: `d3-geo`, `topojson-client`, `world-atlas` (~80KB JSON), `@types/d3-geo`, `@types/topojson-client`. World atlas JSON imports natively via Vite's JSON loader.
+  - **Files**: new `frontend/src/components/SpinningGlobe.tsx`; `frontend/package.json`.
+
+- **WalletGate simplified**: dropped the bordered card box + icon-tile + nested layout. Now an inline centered prompt — eyebrow label + headline + description + ConnectButton — same visual language as a normal page section.
+  - **Why**: user feedback — "multiple boxes on the screen, not appeasing".
+  - **Files**: `frontend/src/components/WalletGate.tsx` (27 → 23 lines).
+
+- **Header reworked**: dropped the violet gradient on `LogoMark` for a flat cream square + noir glyph. Wordmark ditches the `text-noir-accent2` "Perp" half — single cream display-font wordmark. Nav pills ghost-style (`text-noir-cream/45` → `text-noir-cream` on active). FHEVM·Sepolia chip subtle (`border-noir-cream/15`, `tracking-[0.18em]`).
+  - **Files**: `frontend/src/components/Header.tsx`.
+
+- **RainbowKit theme repointed to cream** (`accentColor: '#f3ede0'`, `accentColorForeground: '#050507'`) so the modal chrome matches the hero CTA voice. Mint reserved for orbits + encrypted-state badges + hover states.
+  - **Files**: `frontend/src/providers.tsx`.
+
+- **Custom `<ConnectPill />` replacing the stock `<ConnectButton>`**. Built on `<ConnectButton.Custom>`. All three RainbowKit states (`not-connected` / `wrong-network` / `connected`) render at the same height (h-9) in the same compact cream-pill language. Wrong-network state is a slim red pill (was a chunky red button that ignored our `chainStatus="icon"` prop). Connected state is two slim pills (chain + account) instead of the default verbose chain-name + balance row.
+  - **Why**: user feedback — "Wrong network button is terrible big".
+  - **Files**: `frontend/src/components/Header.tsx`.
+
+- **Wallet connector list rebuilt** so OKX + MetaMask + Coinbase show as separate pickable rows in the connect modal (was: single generic injected with the "default wallet" winning the `window.ethereum` race).
+  - **Tried first**: RainbowKit's `connectorsForWallets([metaMaskWallet, okxWallet, rainbowWallet, injectedWallet], { projectId: '' })`. **Did not work** — RainbowKit wallets that support mobile-QR fallback throw at module load on empty `projectId`, the page rendered blank.
+  - **Final**: pure wagmi `injected()` connectors, one each with explicit `target` — OKX targets `window.okxwallet`, MetaMask targets the built-in `'metaMask'` string target, Coinbase targets `'coinbaseWallet'`, plus a generic fallback. RainbowKit's modal still picks them up and shows them as separate options. Zero RainbowKit-WC dependency, so `api.web3modal.org` (was 403 on `projectId=demo`) and `pulse.walletconnect.org` (was 400) endpoints are never called on local — console noise gone.
+  - **Files**: `frontend/src/lib/wagmi.ts`.
+
+- **Local demo allowlist seeded**: `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` (Hardhat #0, admin) + `0x87E69cA0D5b843e5f1aca9fF40c8b556665c6D67` added to `compliance-backend/data/allowlist.json` so the local stack bring-up doesn't require a manual `curl POST /admin/add` step before the Compliance page reads "allowlisted".
+  - **Files**: `compliance-backend/data/allowlist.json`.
+
+- **Did NOT change**: any contract logic, ABIs, hook contracts, transaction shapes, or test surface. Frontend lint clean (`tsc --noEmit`); contracts test still 288 passing; off-chain test suites still 38 passing (oracle 6 + compliance 14 + bot 18); 326 total green.
+
 ### Phase 8 — Frontend (visual redesign across all 6 pages)
 
 - **Redesigned**: complete visual overhaul of the frontend (Home, Trade, Liquidity, Darkpool, Portfolio, Compliance) plus the shared shell (`Header`, `Layout`, `WalletGate`, `EncryptedValue`, `Form` primitives). Functional contracts and contract integrations preserved exactly — only presentation changed. Goal was to take the post-Phase-8 functional UI from "flat and bland" to a coherent, premium privacy-DEX visual system.
