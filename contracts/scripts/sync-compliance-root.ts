@@ -7,8 +7,13 @@ import { readFileSync } from "node:fs";
 /// the on-chain root, which must match the proof issued by the
 /// backend.
 async function main() {
-  const dep = JSON.parse(readFileSync("deployments/local.json", "utf8"));
+  // Pick the deployment artifact for the network the script is run
+  // against — hardhat sets `hre.network.name` from --network.
+  const networkName = hre.network.name === "hardhat" ? "local" : hre.network.name;
+  const depPath = `deployments/${networkName}.json`;
+  const dep = JSON.parse(readFileSync(depPath, "utf8"));
   const [admin] = await hre.ethers.getSigners();
+  console.log(`Reading deployment: ${depPath}`);
 
   const apiUrl = process.env.COMPLIANCE_API_URL ?? "http://127.0.0.1:4001";
   const res = await fetch(`${apiUrl}/health`);

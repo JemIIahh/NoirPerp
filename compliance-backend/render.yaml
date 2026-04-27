@@ -1,0 +1,31 @@
+# Render free-tier deploy config for the NoirPerp compliance-backend.
+#
+# To deploy:
+#   1. Push the NoirPerp repo to GitHub (or any git host Render supports).
+#   2. Create a Render account at https://render.com (free).
+#   3. Render dashboard → New + → Blueprint → connect your repo.
+#   4. Render reads this render.yaml and provisions the service.
+#   5. Set the ADMIN_API_KEY env secret in the Render UI (DO NOT commit
+#      it to this file — it's a secret).
+#   6. After deploy, Render gives you a URL like:
+#        https://noirperp-compliance.onrender.com
+#      Copy that into frontend/.env as VITE_COMPLIANCE_API_URL.
+#
+# Free-tier note: services sleep after 15 min of inactivity and take
+# ~30 seconds to wake on the next request. Acceptable for demo;
+# upgrade to a paid plan ($7/mo) for always-on if needed.
+
+services:
+  - type:    web
+    name:    noirperp-compliance
+    runtime: docker
+    plan:    free
+    rootDir: compliance-backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key:   ADMIN_API_KEY
+        sync:  false   # must be set via Render UI as a secret
+      - key:   ALLOWLIST_PATH
+        value: ./data/allowlist.json
+      # PORT is set automatically by Render at runtime.
