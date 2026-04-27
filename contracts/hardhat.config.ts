@@ -32,9 +32,13 @@ const config: HardhatUserConfig = {
     },
   },
   etherscan: {
-    apiKey: ETHERSCAN_API_KEY
-      ? { sepolia: ETHERSCAN_API_KEY }
-      : ({} as Record<string, string>),
+    // Etherscan v2 unified API key shape (a single string, not a
+    // network-keyed map). v1 was deprecated end of May 2025 and now
+    // returns errors instead of just warnings.
+    apiKey: ETHERSCAN_API_KEY ?? "",
+  },
+  sourcify: {
+    enabled: false,
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS === "true",

@@ -12,6 +12,50 @@ solved design decisions; give future agents full context.
 
 ---
 
+## 2026-04-27
+
+### Phase 9 — NoirPerp deployed + verified on Ethereum Sepolia 🚀
+
+NoirPerp's eight contracts are now live on Ethereum Sepolia (chainId 11155111) and source-verified on Etherscan. This is the first public, externally-inspectable deployment.
+
+- **Live contract addresses** (all source-verified on https://sepolia.etherscan.io):
+  - Compliance:     `0x8cEc42F9Bd9D464dB7f9DF15C8A4ceecADE25E40`
+  - Oracle:         `0xc6fC99BBBF12689831558c7B315bd9b5EdcBc3C0`
+  - NoirVault:      `0x80c9EDF6aE02FC7574C4650271E18AE6038E9E08`
+  - PerpEngine:     `0x3eE74fd082078B6aEEE3aA082606b12332Fd2678`
+  - AMMEngine:      `0xE8B4fa802B7169a8c4972DeA2C6fc1503e3E2B99`
+  - LimitEngine:    `0xdd4Dce185C7fb44ad60744ebb65951580EA8FE79`
+  - DarkpoolEngine: `0x2031EF7D423bfF2FCa89C335919b11421317bD3d`
+  - cUSDCMock (Zama, NOT redeployed): `0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639`
+  - Admin / deployer: `0x87E69cA0D5b843e5f1aca9fF40c8b556665c6D67`
+  - Relayers (3 placeholder addresses; Oracle.rotateRelayer used to swap in real keys later): `0xaE7d…7c91`, `0x9FC1…34dC`, `0x0994…90d2`
+  - Full deployment artifact: `contracts/deployments/sepolia.json`.
+
+- **CLAUDE.md token rule honored**: NoirVault constructor wired to Zama's pre-deployed canonical cUSDCMock at `0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639` — no private mock deployed. Users mint cUSDCMock from Zama's faucet and deposit into NoirVault directly.
+
+- **Minimal-viable-deploy posture**: deploy succeeded with 3 placeholder relayer addresses (no funded keys, no oracle prices yet). Trading flows are intentionally non-functional until Phase 9 Tasks 7+8 land (cUSDCMock mint, oracle price commit, compliance root sync). The contracts ARE ready for trading the moment those steps are run. Per `Oracle.sol:151` `rotateRelayer(uint8 index, address newRelayer) onlyAdmin`, the placeholder relayers can be swapped for real funded keys with two admin transactions when ready, no redeploy needed.
+
+- **Etherscan verification — fixed v2 API migration mid-flight.**
+  - **Failure mode**: `npx hardhat verify --network sepolia ...` returned `"You are using a deprecated V1 endpoint, switch to Etherscan API V2"` on every contract. Etherscan dropped v1 API support after May 31, 2025; the deprecated config returns errors now, not warnings.
+  - **Root cause**: `hardhat.config.ts` was using v1's network-keyed apiKey shape: `etherscan: { apiKey: { sepolia: ETHERSCAN_API_KEY } }`. v2 requires a single string: `etherscan: { apiKey: ETHERSCAN_API_KEY }`. Also added `sourcify: { enabled: false }` to silence the unrelated Sourcify-not-configured info message.
+  - **Files**: `contracts/hardhat.config.ts`.
+  - **Result after fix**: all 7 contracts verified on first attempt (Compliance, Oracle, NoirVault, PerpEngine, AMMEngine, LimitEngine, DarkpoolEngine). cUSDCMock not in our verify list — already verified by Zama.
+
+- **`contracts/scripts/oracle-verify-args.js`** added. Hardhat-verify cannot accept array constructor args via shell positional argv (it can't disambiguate `[a,b,c]` from a string). The supported workaround is a constructor-args module that exports an args array. Used as: `npx hardhat verify --constructor-args scripts/oracle-verify-args.js --network sepolia <oracle-addr>`.
+
+- **What is NOT yet done on Sepolia** (Phase 9 plan Tasks 7–10 + 11–16, deferred to a later session):
+  - **Task 7 — `setup-sepolia.ts`**: not written. Will mint cUSDCMock to admin (when Zama faucet permits), set vault operator, commit BTC/ETH/SOL oracle prices via 2-of-3 quorum (requires real funded relayer keys, currently placeholders).
+  - **Task 8 — Compliance root sync**: not run. `Compliance.sol` deployed with `ZeroHash` root; no users allowlisted yet on Sepolia. `sync-compliance-root.ts` requires the `compliance-backend` to be reachable from a TLS-public host (currently localhost only).
+  - **Task 9 — Frontend on Sepolia**: not flipped. `frontend/.env` still points at local Hardhat. Switching `VITE_DEPLOYMENT_NETWORK=sepolia` lights up the Zama relayer SDK's production path (real `userDecrypt`); also requires `VITE_WC_PROJECT_ID` for mobile-wallet QR flow.
+  - **Task 10 — Live smoke**: requires Tasks 7+8+9 all done.
+  - **Tasks 11–16 — Tier 2 audit**: Slither, Mythril, OZ FHEVM checklist, Foundry invariants/fuzz, HCU benchmarks, per-contract sign-off doc. Tick-blocking but non-blocking on the deploy itself.
+
+- **Phase 9 status**: deploy + verify shipped. Setup, frontend bring-up, and audit are next-session work. Phase 9 checkbox in `PROGRESS.md` stays unticked until all 16 plan tasks land + acceptance criteria satisfied.
+
+- **Files**: `contracts/hardhat.config.ts`, `contracts/scripts/oracle-verify-args.js` (new), `contracts/deployments/sepolia.json` (new).
+
+---
+
 ## 2026-04-26
 
 ### Phase 9 — Sepolia deploy preparation (plan + script + NatSpec deviations + env)
