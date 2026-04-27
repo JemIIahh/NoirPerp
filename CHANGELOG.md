@@ -14,6 +14,14 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-27
 
+### Docs — user-facing usage guide + README rewrite
+
+- **`docs/USER_GUIDE.md`** (new): end-user documentation for NoirPerp on Sepolia. Sections: what makes NoirPerp different (regular DEX vs FHE-encrypted comparison), live contract addresses with Etherscan links, 10-minute quick-start (wallet setup + cUSDCMock minting via Etherscan write-contract + KYC allowlist + first encrypted long position + reveal), per-page walkthrough of all 6 frontend pages (Landing / Compliance / Trade / Liquidity / Darkpool / Portfolio) with what they do and how each works, four common workflows ("long ETH at 10×", "provide liquidity", "submit a hidden buy at $2900", "verify the protocol"), running-the-frontend instructions for both Sepolia mode and local-Hardhat mode (with the `userDecrypt → 0n` local-mock caveat called out), FAQ + troubleshooting (wrong network, KYC not allowlisted, oracle stale, multi-wallet collision, reveal hangs, etc.), and a glossary of the 14 NoirPerp / FHEVM terms most likely to confuse a new user (FHEVM, ciphertext, KMS/Gateway, userDecrypt, FHE.allow, isSenderAllowed, FHESafeMath, HCU, cUSDCMock, async-decrypt callback, keeper/bot, two distinct uses of "relayer", allowlist, forfeit).
+- **`README.md`** (rewritten): was still saying `Status: Phase 0 — scaffolding` from the very first commit. Updated to reflect actual state (Phase 9 deployed + audited on Sepolia). New shape: pitch → live contract address table with Etherscan links → "I want to use it" pointer to USER_GUIDE.md → "I want to develop on it" with the test-suite invocations → architecture summary → updated repo layout → Tier 2 audit summary table → phase status table → contributing notes.
+- **Why now**: the user explicitly asked for usage docs ahead of Phase 10 (which is where they'd otherwise have lived per the roadmap). Pulling them forward makes the Sepolia deploy actually consumable; it's hard to argue a project is "shipped" if a new user has no entry point beyond the source code.
+- **What's NOT in here**: video walkthrough, marketing site, brand guide, integration partner docs. Those are Phase 10 deliverables.
+- **Files**: `docs/USER_GUIDE.md` (new), `README.md` (rewritten).
+
 ### Phase 9 — Sepolia bring-up + Tier 2 audit (testnet-functional)
 
 NoirPerp is now **functional** on Sepolia: real funded relayers, live oracle prices, admin holds 1M cUSDCMock, vault wired as operator, on-chain merkle root synced. Plus 5 audit docs covering HCU, OZ FHEVM checklist, Slither/Mythril/Foundry tooling deferrals, and per-contract Tier 2 sign-off.
