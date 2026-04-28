@@ -15,46 +15,199 @@
     font-feature-settings: "ss01", "cv11";
   }
 
-  /* Display font for headings and the wordmark. Set via class
-     `font-display` rather than auto-applied so prose-density text
-     (paragraphs, labels, inputs) stays in Inter. */
   .font-display {
     font-feature-settings: "ss02", "ss05";
     letter-spacing: -0.02em;
   }
 
-  /* Tabular numerics by default for any monospace block. */
   .font-mono, code, pre {
     font-feature-settings: "tnum", "zero", "ss01";
   }
 
-  /* Custom selection color. */
   ::selection {
     background: rgba(94, 234, 212, 0.4);
     color: #050507;
   }
 
-  /* Scrollbar polish (webkit only). */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #1e2a28; border-radius: 8px; }
-  ::-webkit-scrollbar-thumb:hover { background: #28403b; }
+  ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.12); }
 }
 
 @layer components {
-  /* Faint dotted-grid background used on the Home hero. */
+  /* ======================================================================
+     GLASS — translucent panels, soft borders, rim highlight, hover lift
+     ====================================================================== */
+  .glass {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.01) 100%);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.04) inset,
+      0 -1px 0 0 rgba(0, 0, 0, 0.3) inset,
+      0 24px 60px -24px rgba(0, 0, 0, 0.5);
+  }
+
+  .glass-strong {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+      0 -1px 0 0 rgba(0, 0, 0, 0.4) inset,
+      0 30px 80px -30px rgba(0, 0, 0, 0.6);
+  }
+
+  .glass-hover {
+    transition: border-color 220ms ease, transform 220ms ease, box-shadow 220ms ease, background 220ms ease;
+  }
+  .glass-hover:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+      0 -1px 0 0 rgba(0, 0, 0, 0.4) inset,
+      0 36px 80px -28px rgba(0, 0, 0, 0.6);
+  }
+
+  /* Faint dotted-grid background — cream dots, not mint. The landing
+     page's canvas is pure noir + cream globe; mint is reserved for
+     intentional accent surfaces only. */
   .bg-grid-dots {
-    background-image: radial-gradient(circle at 1px 1px, rgba(94, 234, 212, 0.10) 1px, transparent 0);
+    background-image: radial-gradient(circle at 1px 1px, rgba(243, 237, 224, 0.06) 1px, transparent 0);
     background-size: 24px 24px;
   }
 
-  /* Encrypted text treatment: monospace, dotted underline, slight blur. */
+  /* ======================================================================
+     AURORA — cream-dominant warm wash. Mint is intentionally absent from
+     the page background so the canvas reads as the same noir + cream
+     world as the landing globe. Mint stays reserved for accent surfaces
+     (CTA hover, focus rings, encrypted callouts).
+     ====================================================================== */
+  .aurora {
+    background:
+      radial-gradient(60% 50% at 15% 25%, rgba(243, 237, 224, 0.05) 0%, transparent 60%),
+      radial-gradient(50% 55% at 82% 15%, rgba(243, 237, 224, 0.03) 0%, transparent 60%),
+      radial-gradient(55% 45% at 70% 80%, rgba(243, 237, 224, 0.04) 0%, transparent 70%);
+    animation: aurora-drift 28s ease-in-out infinite alternate;
+  }
+
+  @keyframes aurora-drift {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    50%  { transform: translate3d(-2%, 1.5%, 0) scale(1.04); }
+    100% { transform: translate3d(2%, -1.5%, 0) scale(1.02); }
+  }
+
+  /* ======================================================================
+     ORBS — slow-floating colored blurs.
+     ====================================================================== */
+  .orb {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(60px);
+    opacity: 0.55;
+    pointer-events: none;
+    will-change: transform;
+  }
+  /* Orbs — cream-dominant. Mint orb kept as a single small accent the
+     way the landing globe carries a mint orbital ring. */
+  .orb-cream     { background: radial-gradient(circle, rgba(243, 237, 224, 0.16), transparent 65%); }
+  .orb-cream-dim { background: radial-gradient(circle, rgba(243, 237, 224, 0.08), transparent 70%); }
+  .orb-mint      { background: radial-gradient(circle, rgba(94, 234, 212, 0.18), transparent 70%); }
+
+  .orb-float-1 { animation: orb-float-1 24s ease-in-out infinite alternate; }
+  .orb-float-2 { animation: orb-float-2 30s ease-in-out infinite alternate; }
+  .orb-float-3 { animation: orb-float-3 26s ease-in-out infinite alternate; }
+
+  @keyframes orb-float-1 {
+    0%   { transform: translate3d(0,    0,   0) scale(1);    }
+    50%  { transform: translate3d(40px, 30px, 0) scale(1.08); }
+    100% { transform: translate3d(-30px, 50px, 0) scale(0.95); }
+  }
+  @keyframes orb-float-2 {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    100% { transform: translate3d(-50px, -40px, 0) scale(1.1); }
+  }
+  @keyframes orb-float-3 {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    100% { transform: translate3d(60px, -30px, 0) scale(1.05); }
+  }
+
+  /* ======================================================================
+     GRAIN — subtle noise overlay so big flat surfaces don't look plastic.
+     ====================================================================== */
+  .grain::after {
+    content: "";
+    position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+
+  /* ======================================================================
+     SHIMMER — animated gradient sweep on borders / hero text.
+     ====================================================================== */
+  .shimmer-text {
+    background: linear-gradient(
+      90deg,
+      rgba(243, 237, 224, 0.85) 0%,
+      rgba(243, 237, 224, 0.55) 35%,
+      rgba(94, 234, 212, 1) 50%,
+      rgba(243, 237, 224, 0.55) 65%,
+      rgba(243, 237, 224, 0.85) 100%
+    );
+    background-size: 250% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: shimmer 6s linear infinite;
+  }
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Conic ring — used on hero icon halos. Mint + cream only, matching
+     the landing page palette. */
+  .conic-ring {
+    background: conic-gradient(
+      from 180deg at 50% 50%,
+      rgba(94, 234, 212, 0.0) 0deg,
+      rgba(94, 234, 212, 0.65) 90deg,
+      rgba(243, 237, 224, 0.45) 180deg,
+      rgba(94, 234, 212, 0.65) 270deg,
+      rgba(94, 234, 212, 0.0) 360deg
+    );
+    animation: conic-spin 8s linear infinite;
+  }
+  @keyframes conic-spin {
+    0%   { transform: rotate(0deg);   }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* ======================================================================
+     ENCRYPTED text treatment.
+     ====================================================================== */
   .encrypted-text {
     filter: blur(3.5px);
     letter-spacing: 0.05em;
     user-select: none;
   }
+
+  /* Subtle pulse — for "live" indicators. */
+  .pulse-dot {
+    box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.5);
+    animation: pulse-dot 2s ease-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%   { box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.5); }
+    100% { box-shadow: 0 0 0 12px rgba(94, 234, 212, 0); }
+  }
 }
 
-/* Legacy class kept for any direct consumers. */
 .font-mono-tight { font-feature-settings: "tnum"; }

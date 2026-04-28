@@ -14,14 +14,14 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-noir-mute">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-noir-mute">
           {label}
         </span>
-        {trailing && <span className="text-[10px] text-noir-dim">{trailing}</span>}
+        {trailing && <span className="text-[10px] text-noir-cream/50 font-medium">{trailing}</span>}
       </div>
       <div>{children}</div>
-      {hint && <div className="text-xs text-noir-dim mt-1.5">{hint}</div>}
+      {hint && <div className="text-[11px] text-noir-cream/45 mt-2 leading-relaxed">{hint}</div>}
     </label>
   );
 }
@@ -41,13 +41,14 @@ export function Input({ prefix, suffix, invalid, className, ...rest }: InputProp
     <input
       {...rest}
       className={clsx(
-        "w-full bg-noir-black border rounded-lg px-3 py-2.5 font-mono text-sm",
-        "text-noir-white placeholder:text-noir-mute/70",
-        "focus:outline-none focus:border-noir-accent focus:shadow-glow-soft",
-        "transition-colors duration-150",
-        invalid ? "border-noir-red/50" : "border-noir-line hover:border-noir-edge",
-        prefix && "pl-10",
-        suffix && "pr-12",
+        "w-full bg-black/30 border rounded-xl px-3.5 py-3.5 font-mono text-[15px]",
+        "text-noir-cream placeholder:text-noir-cream/25",
+        "backdrop-blur-md",
+        "focus:outline-none focus:border-noir-accent/70 focus:shadow-[0_0_0_3px_rgba(94,234,212,0.10)] focus:bg-black/50",
+        "transition-all duration-200",
+        invalid ? "border-noir-red/50" : "border-white/[0.07] hover:border-white/15",
+        prefix && "pl-11",
+        suffix && "pr-16",
         className,
       )}
     />
@@ -64,7 +65,7 @@ export function Input({ prefix, suffix, invalid, className, ...rest }: InputProp
       )}
       {inputEl}
       {suffix && (
-        <div className="absolute inset-y-0 right-0 flex items-center pr-3 text-noir-mute text-xs font-medium">
+        <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-noir-cream/45 text-[11px] font-medium uppercase tracking-[0.1em]">
           {suffix}
         </div>
       )}
@@ -79,11 +80,10 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={clsx(
-        "w-full bg-noir-black border border-noir-line rounded-lg px-3 py-2.5 text-sm",
-        "text-noir-white",
-        "focus:outline-none focus:border-noir-accent focus:shadow-glow-soft",
-        "hover:border-noir-edge transition-colors duration-150 cursor-pointer",
-        // Native arrow can be ugly on Linux/Win; keep but tone it down.
+        "w-full bg-black/30 border border-white/[0.07] rounded-xl px-3.5 py-3.5 text-[14px]",
+        "text-noir-cream backdrop-blur-md",
+        "focus:outline-none focus:border-noir-accent/70 focus:shadow-[0_0_0_3px_rgba(94,234,212,0.10)]",
+        "hover:border-white/15 transition-colors duration-200 cursor-pointer",
         "appearance-none bg-no-repeat bg-[right_0.75rem_center]",
         props.className,
       )}
@@ -112,27 +112,29 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary:
-    "bg-noir-accent text-white border-noir-accent2/40 font-semibold " +
-    "hover:bg-noir-violet hover:shadow-glow-violet " +
+    "bg-noir-cream text-noir-black border-noir-cream font-semibold " +
+    "hover:bg-noir-accent hover:border-noir-accent " +
+    "hover:shadow-[0_8px_28px_-6px_rgba(94,234,212,0.5)] " +
     "active:translate-y-px",
   secondary:
-    "bg-noir-raised text-noir-white border-noir-edge " +
-    "hover:bg-noir-hover hover:border-noir-accent/40",
+    "bg-white/[0.05] text-noir-cream border-white/10 backdrop-blur-md " +
+    "hover:bg-white/[0.10] hover:border-white/20",
   ghost:
-    "bg-transparent text-noir-dim border-transparent " +
-    "hover:bg-noir-raised hover:text-noir-white",
+    "bg-transparent text-noir-cream/55 border-transparent " +
+    "hover:bg-white/[0.05] hover:text-noir-cream",
   danger:
-    "bg-noir-red/10 text-noir-red border-noir-red/40 " +
-    "hover:bg-noir-red/20 hover:border-noir-red/60",
+    "bg-noir-red/[0.10] text-noir-red border-noir-red/35 backdrop-blur-md " +
+    "hover:bg-noir-red/[0.18] hover:border-noir-red/55",
   success:
-    "bg-noir-green/15 text-noir-green border-noir-green/40 " +
-    "hover:bg-noir-green/25 hover:border-noir-green/60",
+    "bg-noir-accent/[0.10] text-noir-accent border-noir-accent/35 backdrop-blur-md " +
+    "hover:bg-noir-accent/[0.18] hover:border-noir-accent/55 " +
+    "hover:shadow-[0_8px_28px_-6px_rgba(94,234,212,0.4)]",
 };
 
 const SIZE: Record<ButtonSize, string> = {
-  sm: "px-3 py-1.5 text-xs",
-  md: "px-4 py-2.5 text-sm",
-  lg: "px-5 py-3 text-sm",
+  sm: "px-3 py-1.5 text-xs rounded-lg",
+  md: "px-4 py-2.5 text-sm rounded-xl",
+  lg: "px-5 py-3.5 text-[14px] rounded-xl",
 };
 
 export function Button({
@@ -151,7 +153,7 @@ export function Button({
       {...rest}
       disabled={disabled || loading}
       className={clsx(
-        "inline-flex items-center justify-center gap-2 rounded-lg border font-medium",
+        "inline-flex items-center justify-center gap-2 border font-medium",
         "transition-all duration-150",
         "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none",
         VARIANT[variant],

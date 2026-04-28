@@ -13,7 +13,7 @@ const NAV = [
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-30 backdrop-blur-xl bg-noir-black/75 border-b border-noir-line/60">
+    <header className="sticky top-0 z-30 backdrop-blur-2xl bg-noir-black/55 border-b border-white/[0.05]">
       <div className="w-full px-6 h-16 flex items-center justify-between gap-6">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5 group">

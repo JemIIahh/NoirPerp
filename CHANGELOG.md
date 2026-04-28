@@ -14,6 +14,28 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-28
 
+### Frontend design-system extensions — load-bearing for Phase 11 UI
+
+Lands the 9-file design-system upgrade that was already in the working tree at the start of this session and which Phase 11's `Darkpool.tsx` (committed at `f71a25a`) depends on. Shipping this together is required: without it, HEAD's `Darkpool.tsx` imports + class references resolve to undefined exports / missing utilities and the frontend build fails on a fresh clone.
+
+**What's in scope** (visual + design-system layer only — 0 contract calls touched, 0 ABIs changed, 0 wallet/RPC behavior changed):
+
+- `frontend/src/components/ui.tsx` — new `Stat`, `KeyValue`, `TogglePills` exports; `hero` variant on `Card`; updated `BadgeTone` palette; refreshed Spinner / EmptyState / SectionHeader. **Phase 11's Darkpool form imports `TogglePills`** for the P2P / Pool toggle and Long / Short toggle, and uses `Card hero` for the form panel + privacy hero strip.
+- `frontend/src/index.css` — new utility classes (`glass`, `conic-ring`, `pulse-dot`, `shimmer-text`, refreshed `bg-grid-dots`) + `pulse-dot`, `shimmer`, `conic-spin` keyframes. **Phase 11's Darkpool uses `shimmer-text` on the "dark" word in the title, `pulse-dot` on the "auto-refresh" indicator, `bg-grid-dots` masks on the hero strip and form Card**.
+- `frontend/tailwind.config.js` — 3 new keyframes/animations: `fade-up`, `drift-y`, `border-spin`. **Phase 11's Darkpool uses `animate-fade-up` with staggered `animation-delay` values for entrance choreography**.
+- `frontend/src/components/Layout.tsx` — adds `SceneBackdrop` ambient component (mint orb, cream warmth, dotted-grid wash) rendered on every non-home page. Footer + status indicator restyled to match.
+- `frontend/src/components/Header.tsx` — 2-line tweak: `backdrop-blur-2xl bg-noir-black/55` + transparent border for the new aurora-aware ambient layer.
+- `frontend/src/components/Form.tsx` — input + select restyled: rounded-xl, glassy `bg-black/30` + `backdrop-blur-md`, mint focus ring, larger touch targets, uppercase tracked-out trailing labels. Hint typography lifted to `text-[11px] text-noir-cream/45 leading-relaxed`.
+- `frontend/src/pages/Trade.tsx` — UI polish only (pricing display restructure, FeaturedMarket card, KeyValue row component usage). No contract calls or ABI changed.
+- `frontend/src/pages/Liquidity.tsx` — UI polish only (TogglePills for deposit/withdraw mode, KeyValue rows, refreshed pool stats card). No contract calls or ABI changed.
+- `frontend/src/pages/Compliance.tsx` — UI polish only (Stat cards for KYC status, refreshed proof viewer). No contract calls or ABI changed.
+
+**Provenance**: this WIP predated the Phase 11 work session — was already in the modified set when I resumed at `b50b6b3`. I initially mis-characterized it as unrelated polish that should be split out, but `Darkpool.tsx` (committed in `f71a25a`) was built on top of these new utilities and exports. Without this commit, fresh clones of HEAD cannot resolve `TogglePills`, `<Card hero>`, `shimmer-text`, `pulse-dot`, `animate-fade-up`, etc.
+
+**Verification**: `npm run build` clean on the bundled tree (271KB gzipped main bundle unchanged). `npm run lint` clean (`tsc --noEmit` passes). No contract or hook integration touched.
+
+**Files**: `frontend/src/components/{Form,Header,Layout,ui}.tsx` + `frontend/src/index.css` + `frontend/src/pages/{Compliance,Liquidity,Trade}.tsx` + `frontend/tailwind.config.js` (940 insertions, 504 deletions across 9 files).
+
 ### Phase 11 — Tier 1 audit + tick (Tasks 11 + 12) ✅
 
 Phase 11 (Darkpool peer-to-peer pair matching) ticks complete. All 12 plan tasks done. 302 contract tests + 25 bot tests passing.
