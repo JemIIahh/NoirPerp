@@ -61,6 +61,25 @@ export async function handleBatchDecrypt(args: BatchDecryptArgs): Promise<void> 
 }
 
 /**
+ * Phase 11 — pair-match decrypt path: DarkpoolEngine MatchProposed with 3
+ * handles ([intersects, buyResidualZero, sellResidualZero]). Same shape as
+ * handleBatchDecrypt but routes to `_onMatchDecided` instead of
+ * `_onBatchDecided`.
+ */
+export async function handleMatchDecrypt(args: BatchDecryptArgs): Promise<void> {
+  const { engine, requestId, handles, publicDecrypt, logger } = args;
+  try {
+    const { abiEncodedClearValues, decryptionProof } = await publicDecrypt(handles);
+    const tx = await (engine as any)._onMatchDecided(requestId, handles, abiEncodedClearValues, decryptionProof);
+    await tx.wait();
+    logger.info({ requestId: requestId.toString(), n: handles.length }, "match decrypt-relay completed");
+  } catch (err) {
+    logger.error({ requestId: requestId.toString(), err: (err as Error).message }, "match decrypt-relay failed");
+    throw err;
+  }
+}
+
+/**
  * Wires all four engines' decrypt-request events to the appropriate handler.
  * Returns an unsubscribe function.
  *
@@ -140,15 +159,34 @@ export function subscribeDecryptRelay(
     }).catch(() => {});
   };
 
+  // Phase 11 — pair-match decrypt: (requestId, buyId, sellId, requester, handles)
+  const onMatch = async (
+    requestId: bigint,
+    _buyId: bigint,
+    _sellId: bigint,
+    _requester: string,
+    handles: string[],
+  ) => {
+    await handleMatchDecrypt({
+      engine: darkRW,
+      requestId,
+      handles: [...handles],
+      publicDecrypt,
+      logger,
+    }).catch(() => {});
+  };
+
   perpRO.on("LiquidationRequested", onLiq);
   limitRO.on("TriggerRequested", onTrig);
   ammRO.on("WithdrawRequested", onWithdraw);
   darkRO.on("BatchMatchRequested", onBatch);
+  darkRO.on("MatchProposed", onMatch);
 
   return () => {
     perpRO.off("LiquidationRequested", onLiq);
     limitRO.off("TriggerRequested", onTrig);
     ammRO.off("WithdrawRequested", onWithdraw);
     darkRO.off("BatchMatchRequested", onBatch);
+    darkRO.off("MatchProposed", onMatch);
   };
 }

@@ -6,6 +6,7 @@ import { TrackedSet } from "./state.js";
 import { subscribeLiquidation, runLiquidationTick } from "./watchers/liquidation.js";
 import { subscribeTrigger, runTriggerTick } from "./watchers/trigger.js";
 import { subscribeBatch, runBatchTick, type DarkOrderRef } from "./watchers/batch.js";
+import { subscribeMatch, runMatchTick, type PairOrderRef, type RecentlyFailed } from "./watchers/match.js";
 import { subscribeDecryptRelay, type PublicDecryptFn } from "./watchers/decrypt-relay.js";
 
 async function makePublicDecrypt(network: string): Promise<PublicDecryptFn> {
@@ -37,6 +38,7 @@ async function replayEvents(
   liquidations: TrackedSet<bigint>,
   triggers: TrackedSet<bigint>,
   batches: TrackedSet<DarkOrderRef>,
+  pairs: TrackedSet<PairOrderRef>,
   logger: Logger,
 ): Promise<void> {
   // Position lifecycle: subscribe via VAULT (corrected from plan — PositionOpened is on NoirVault)
@@ -85,8 +87,29 @@ async function replayEvents(
     }
   }
 
+  // Pair-eligible dark lifecycle (Phase 11). Same drop-set logic — but
+  // additionally treat OrderClosed as a removal trigger (the contract emits
+  // it when an order is fully consumed by a pair match) and MatchAborted
+  // does NOT remove (the cancelled side is already in OrderCancelled; the
+  // surviving side stays tracked).
+  const submittedPair = await clients.darkRO.queryFilter("OrderSubmittedForPair", fromBlock);
+  const pairClosed = await clients.darkRO.queryFilter("OrderClosed", fromBlock);
+  const dropPairIds = new Set<string>();
+  for (const ev of darkCancelled) dropPairIds.add((ev as any).args.orderId.toString());
+  for (const ev of pairClosed) dropPairIds.add((ev as any).args.orderId.toString());
+  for (const ev of submittedPair) {
+    const id: bigint = (ev as any).args.orderId;
+    if (dropPairIds.has(id.toString())) continue;
+    pairs.add({
+      orderId: id,
+      owner: (ev as any).args.owner,
+      marketId: Number((ev as any).args.marketId),
+      isLong: Boolean((ev as any).args.isLong),
+    });
+  }
+
   logger.info(
-    { liquidations: liquidations.size, triggers: triggers.size, batches: batches.size },
+    { liquidations: liquidations.size, triggers: triggers.size, batches: batches.size, pairs: pairs.size },
     "replay complete",
   );
 }
@@ -100,9 +123,11 @@ async function main(): Promise<void> {
   const liquidations = new TrackedSet<bigint>();
   const triggers = new TrackedSet<bigint>();
   const batches = new TrackedSet<DarkOrderRef>();
+  const pairs = new TrackedSet<PairOrderRef>();
+  const recentlyFailedMatches: RecentlyFailed = new Map();
 
   const fromBlock = Number(process.env.START_BLOCK ?? 0);
-  await replayEvents(clients, fromBlock, liquidations, triggers, batches, logger);
+  await replayEvents(clients, fromBlock, liquidations, triggers, batches, pairs, logger);
   // MVP: events emitted in the brief window between replay tip and live
   // WS subscription start are silently lost. Acceptable here because
   // replay is fast (~1 block typically), and the bot's tick loop will
@@ -115,6 +140,7 @@ async function main(): Promise<void> {
   const unsubLiq = subscribeLiquidation(clients.vaultRO, clients.perpRO, liquidations, logger);
   const unsubTrig = subscribeTrigger(clients.limitRO, triggers, logger);
   const unsubBatch = subscribeBatch(clients.darkRO, batches, logger);
+  const unsubMatch = subscribeMatch(clients.darkRO, pairs, recentlyFailedMatches, logger);
 
   const publicDecrypt = await makePublicDecrypt(cfg.deployment.network);
   const unsubRelay = subscribeDecryptRelay(
@@ -129,6 +155,7 @@ async function main(): Promise<void> {
     unsubLiq();
     unsubTrig();
     unsubBatch();
+    unsubMatch();
     unsubRelay();
     process.exit(0);
   });
@@ -142,6 +169,7 @@ async function main(): Promise<void> {
         runLiquidationTick(clients.perpRW, liquidations, logger),
         runTriggerTick(clients.limitRW, triggers, logger),
         runBatchTick(clients.darkRW, batches, logger),
+        runMatchTick(clients.darkRW, pairs, recentlyFailedMatches, logger),
       ]);
     } finally {
       busy = false;

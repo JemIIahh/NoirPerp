@@ -14,6 +14,30 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-28
 
+### Phase 11 — Bot match watcher (Task 6) + watcher tests (Task 8)
+
+Adds the 5th bot watcher — pair-discovery + on-chain `submitMatchPair` submission — and wires the new `MatchProposed` decrypt event into the existing decrypt-relay so the bot can fulfill its own match callbacks end-to-end. 25 bot tests green (18 prior + 7 new); no regressions.
+
+**`bot/src/watchers/match.ts`** (new, ~180 lines):
+- `subscribeMatch(darkRO, tracked, recentlyFailed, logger)` listens to 5 events. `OrderSubmittedForPair` → add to candidate pool with `{orderId, owner, marketId, isLong}`. `OrderClosed` (full consumption) and `OrderCancelled` → remove. `MatchRejected` → record back-off keyed by `${buyId}-${sellId}` at the current block. `MatchAborted` → log only (the cancelled side is already removed via `OrderCancelled`, so the pair can't reform).
+- `pickCandidatePair(tracked, recentlyFailed, currentBlock)` — pure function, exported for testing. Groups by `marketId`, splits longs/shorts, filters distinct-owner + not-recently-failed (within `BACKOFF_BLOCKS = 10`), sorts by `orderId`-sum (FIFO tiebreaker — design memo §3 specifies FIFO since prices aren't bot-visible). Returns the lowest-sum viable pair or undefined.
+- `runMatchTick(darkRW, tracked, recentlyFailed, logger)` — submits one pair per tick (`MAX_PAIRS_PER_TICK = 1`) to avoid HCU contention. On revert, records back-off so the same pair won't tightloop.
+
+**`bot/src/clients.ts`** — `DARK_ABI` extended with: `OrderSubmittedForPair`, `OrderClosed`, `MatchProposed`, `MatchSettled`, `MatchRejected`, `MatchAborted` events + `submitMatchPair` and `_onMatchDecided` functions. Existing batch ABI entries unchanged.
+
+**`bot/src/watchers/decrypt-relay.ts`** — new `handleMatchDecrypt` mirrors `handleBatchDecrypt` but routes to `_onMatchDecided`. New `onMatch` listener wired in `subscribeDecryptRelay` for `MatchProposed(requestId, buyId, sellId, requester, handles)`. Three-handle list `[intersects, buyResidualZero, sellResidualZero]` flows through the same `publicDecrypt` → callback round-trip as the batch path.
+
+**`bot/src/index.ts`** — wires the 5th watcher: `pairs = new TrackedSet<PairOrderRef>()` + `recentlyFailedMatches: Map<string, bigint>`. Replay extended to scan `OrderSubmittedForPair` since deploy block, dropping any IDs that subsequently appeared in `OrderCancelled` or `OrderClosed`. Tick loop adds `runMatchTick` to the parallel `Promise.all`. SIGTERM handler unsub'd.
+
+**`bot/test/match.test.ts`** (new, 7 cases):
+- `pickCandidatePair`: viability matrix (cross-side + distinct-owner + same-market), back-off skip + fall-through to next-lowest-sum pair, eligibility restored after `BACKOFF_BLOCKS`.
+- `runMatchTick`: one-pair-per-tick discipline with MAX_PAIRS_PER_TICK=1 verified across 3-buy × 3-sell pool, revert path records back-off at current block, residual order re-enters pool after small order's `OrderClosed` removal, no-op cases (empty pool, single-side pool, all-back-off'd).
+- Mock `darkRW.runner.provider.getBlockNumber` exposes the current-block hook used by both back-off recording and selection. Existing 18 bot tests untouched.
+
+**Verification**: `npm run build` clean. `npm test` → 25 passing (18 prior + 7 new).
+
+**Files**: `bot/src/watchers/match.ts` (new), `bot/test/match.test.ts` (new), `bot/src/clients.ts` (+12 ABI lines), `bot/src/watchers/decrypt-relay.ts` (+~30 lines), `bot/src/index.ts` (+~30 lines).
+
 ### Phase 11 — Darkpool pair matching: Task 7 tests + concurrent-cancel guard + residual-ACL fix
 
 Lands the 13-test suite for `submitMatchPair` + `_onMatchDecided` (Phase 11 Task 7) plus two contract corrections that the tests forced. All 301 contract tests green (288 prior + 13 new); 0 regressions.

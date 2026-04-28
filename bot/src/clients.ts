@@ -46,11 +46,19 @@ const AMM_ABI = [
 
 const DARK_ABI = [
   "event OrderSubmitted(uint256 indexed orderId, address indexed owner, uint8 marketId)",
+  "event OrderSubmittedForPair(uint256 indexed orderId, address indexed owner, uint8 marketId, bool isLong)",
   "event OrderCancelled(uint256 indexed orderId, address indexed owner)",
+  "event OrderClosed(uint256 indexed orderId, string reason)",
   "event BatchMatchRequested(uint256 indexed requestId, address indexed keeper, uint256[] orderIds, bytes32[] handles)",
   "event BatchSettled(uint256 indexed requestId, uint256[] orderIds, uint256[] shouldFires)",
+  "event MatchProposed(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId, address requester, bytes32[] handles)",
+  "event MatchSettled(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId, address settler)",
+  "event MatchRejected(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId)",
+  "event MatchAborted(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId, string reason)",
   "function requestBatchMatch(uint256[] orderIds) external returns (uint256 requestId)",
+  "function submitMatchPair(uint256 buyId, uint256 sellId) external returns (uint256 requestId)",
   "function _onBatchDecided(uint256 requestId, bytes32[] handles, bytes cleartexts, bytes proof) external",
+  "function _onMatchDecided(uint256 requestId, bytes32[] handles, bytes cleartexts, bytes proof) external",
 ];
 
 export type Clients = {
