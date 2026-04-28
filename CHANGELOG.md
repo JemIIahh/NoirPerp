@@ -12,6 +12,38 @@ solved design decisions; give future agents full context.
 
 ---
 
+## 2026-04-28
+
+### Phase 11 plan written — Darkpool peer-to-peer pair matching
+
+`docs/plans/2026-04-28-phase-11-darkpool-pair-match.md`. Closes the most-cited functional gap vs ZKPerp (real partial fills + buyer↔seller pairing) **without weakening the threat model** — nobody, including the off-chain matcher bot, learns user limit prices in the new flow. 12 tasks, ~16-18 hours.
+
+Three design choices locked at plan time:
+
+1. **Opt-in via new function** (`submitOrderForPairMatch`), not forced migration. Existing `submitOrder` + `requestBatchMatch` flow keeps working unchanged.
+2. **Oracle-pegged settlement**, not midpoint-of-limits. Decrypting a midpoint would leak the price range; oracle price preserves the "only the boolean `intersects` is decrypted" property.
+3. **Approach B for residual handling** — bundle 3 booleans (`intersects`, `buyResidualZero`, `sellResidualZero`) into ONE Gateway decrypt. Reuses the existing `_decodeBatch` flat-tuple helper at `DarkpoolEngine.sol:308` from Phase 6's `_onBatchDecided`. Eliminates the Approach-A "bot tracks exhaustion locally" bug class with zero new infrastructure cost.
+
+Storage changes are additive: `Order` gets `collateralPerUnit` (euint64) + `pairMatchEligible` (bool); new `PendingMatch` struct alongside existing `PendingDecrypt`. Old orders unaffected.
+
+Settlement collateral computed as `collateralPerUnit × fillSize` — single FHE multiplication, avoids the banned `FHE.div(euint64, euint64)`. User pre-computes `collateralPerUnit = totalCollateral / size` off-chain at order construction time (they already pick both numbers).
+
+Plan execution begins next; this commit is the planning artifact alone.
+
+### Sepolia bring-up follow-up — real Chainlink prices + Portfolio cUSDCMock support
+
+Three changes to make NoirPerp actually useful on Sepolia (vs the post-Phase-9-deploy state where setup-sepolia.ts had committed prices once and they'd been stale for ~12h).
+
+- **`oracle-relayer` now reads real Chainlink AggregatorV3 feeds on Sepolia.** `chainlink.ts` was named for it but only had `mockPrice()` — extended with `realPriceFactory(provider, chainId)` that reads `latestRoundData()` from `0x1b44…Ee43` (BTC/USD), `0x694A…5306` (ETH/USD). SOL has no Sepolia Chainlink feed → falls back to `mockPrice` with a one-time warning. `relayer.ts` `PriceFn` widened to accept sync OR async price functions; `submitTick` awaits whatever returns. `index.ts` picks the price source based on `USE_MOCK_PRICES` config flag.
+  - Live verification: oracle-relayer running against Sepolia 2026-04-28 12:48 UTC; first tick committed BTC=$76,258 (real Chainlink) + ETH=$2,271 (real Chainlink) + SOL=$152 (synthetic fallback). All three markets fresh on the frontend's `STALE` indicator.
+  - Files: `oracle-relayer/src/{chainlink,relayer,index}.ts`, `oracle-relayer/.env`.
+
+- **`frontend/src/lib/types.ts`** — `Deployment.contracts.MockERC7984` and `cUSDCMock` are both optional now. Added missing `LimitEngine` field that was forgotten when the type was first written. New helper `getUsdcxToken(deployment)` resolves whichever USDCx address is present (cUSDCMock on Sepolia, MockERC7984 on local). Frontend code can treat them identically — both implement ERC-7984.
+
+- **`frontend/src/pages/Portfolio.tsx`** — balance grid expanded from 3 stats to 4. New first tile: native ETH balance (gas) via wagmi's `useBalance()` — shown in plaintext (it's not encrypted), labeled "Hardhat ETH" or "Sepolia ETH" based on the deployment network. The 3 encrypted-with-reveal tiles (wallet USDCx/cUSDCMock, vault, AMM shares) preserved unchanged. The wallet-balance tile reads the address via `getUsdcxToken()` so it works on both networks; label dynamically reads "USDCx" on local / "cUSDCMock" on Sepolia.
+
+- **`frontend/.env`** flipped to Sepolia mode (gitignored, doesn't commit; documented in `.env.example` block).
+
 ## 2026-04-27
 
 ### Docs — user-facing usage guide + README rewrite

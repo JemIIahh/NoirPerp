@@ -6,7 +6,11 @@ export type Logger = {
   error: (msg: any, ...args: any[]) => void;
 };
 
-export type PriceFn = (marketId: number) => bigint;
+/**
+ * Price source. Sync (mockPrice) or async (real Chainlink read) — both
+ * work because submitTick awaits whatever it returns.
+ */
+export type PriceFn = (marketId: number) => bigint | Promise<bigint>;
 
 /**
  * One tick: for each market, fetch a price and submit from both relayers.
@@ -22,7 +26,7 @@ export async function submitTick(
 ): Promise<void> {
   const t = Math.floor(Date.now() / 1000);
   for (const market of MARKETS) {
-    const price = priceFn(market.id);
+    const price = await priceFn(market.id);
     try {
       const tx = await oracleA.submitPrice(market.id, price, t);
       await tx.wait();
