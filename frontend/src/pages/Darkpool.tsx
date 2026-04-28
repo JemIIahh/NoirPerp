@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { useAccount, useWriteContract } from "wagmi";
 import {
-  EyeOff, Lock, TrendingUp, TrendingDown, Activity, AlertCircle,
+  EyeOff, Lock, TrendingUp, TrendingDown, AlertCircle,
   Info, X, ChevronRight, Fingerprint,
 } from "lucide-react";
-import clsx from "clsx";
 import { WalletGate } from "../components/WalletGate";
 import { Field, Input, Select, Button } from "../components/Form";
-import { Card, Badge, SectionHeader, EmptyState } from "../components/ui";
+import { Card, Badge, SectionHeader, EmptyState, TogglePills } from "../components/ui";
 import { EncryptedValue } from "../components/EncryptedValue";
 import { useDeployment } from "../hooks/useDeployment";
 import { useEncryptInput } from "../hooks/useEncrypt";
@@ -16,7 +15,6 @@ import { useDarkOrders } from "../hooks/useDarkOrders";
 import { MARKETS, marketById } from "../lib/markets";
 import { DARK_ABI } from "../lib/abis";
 
-// DARK_ABI is already an Abi (parsed strings + JSON submitOrder entry).
 const DARK = DARK_ABI;
 
 export default function Darkpool() { return <WalletGate><Inner /></WalletGate>; }
@@ -34,25 +32,61 @@ function Inner() {
   const [size, setSize] = useState("");
   const [collateral, setCollateral] = useState("");
   const [limitPrice, setLimitPrice] = useState("");
+  // Phase 11 — pair-match opt-in. Default ON: P2P matching is the
+  // recommended flow (better fills, true peer-to-peer pairing). Users can
+  // toggle off to use the legacy batch-vs-pool path.
+  const [pairMatch, setPairMatch] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const market = marketById(marketId);
+
+  // Phase 11 — when pair-match is on, the engine takes (size, collateralPerUnit)
+  // instead of (size, collateral). Compute the per-unit value off-chain so the
+  // engine never needs the banned ct/ct division. Integer division silently
+  // drops the remainder; we surface the resulting effective lock as a hint.
+  const sizeNum = Number(size);
+  const collNum = Number(collateral);
+  const cpuPreview = (pairMatch && sizeNum > 0 && collNum > 0)
+    ? Math.floor(collNum / sizeNum)
+    : 0;
+  const effectiveLock = cpuPreview * sizeNum;
+  const lockMismatch = pairMatch && collNum > 0 && sizeNum > 0 && effectiveLock !== collNum;
 
   async function onSubmit() {
     setError(null);
     if (!proof?.allowlisted) { setError("Address not allowlisted"); return; }
     if (!deployment) return;
     try {
-      const enc = await encrypt(BigInt(size), BigInt(collateral), BigInt(limitPrice));
-      const inputs = {
-        eSize: enc.handles[0], sizeProof: enc.inputProof,
-        eCollateral: enc.handles[1], collateralProof: enc.inputProof,
-        eLimitPrice: enc.handles[2], limitProof: enc.inputProof,
-      };
-      await writeContractAsync({
-        address: deployment.contracts.DarkpoolEngine, abi: DARK,
-        functionName: "submitOrder", args: [inputs, marketId, isLong, proof.proof],
-      });
+      if (pairMatch) {
+        // Pair-eligible path: encrypt (size, collateralPerUnit, limitPrice).
+        // collateralPerUnit = total / size, integer division. Total escrow
+        // locked by the engine is exactly cpu × size = effectiveLock.
+        const sz = BigInt(size);
+        const cpu = BigInt(collateral) / sz;
+        const enc = await encrypt(sz, cpu, BigInt(limitPrice));
+        const inputs = {
+          eSize: enc.handles[0],                  sizeProof: enc.inputProof,
+          eCollateralPerUnit: enc.handles[1],     collateralPerUnitProof: enc.inputProof,
+          eLimitPrice: enc.handles[2],            limitProof: enc.inputProof,
+        };
+        await writeContractAsync({
+          address: deployment.contracts.DarkpoolEngine, abi: DARK,
+          functionName: "submitOrderForPairMatch",
+          args: [inputs, marketId, isLong, proof.proof],
+        });
+      } else {
+        // Legacy batch-vs-pool path: encrypt (size, collateral, limitPrice).
+        const enc = await encrypt(BigInt(size), BigInt(collateral), BigInt(limitPrice));
+        const inputs = {
+          eSize: enc.handles[0],       sizeProof: enc.inputProof,
+          eCollateral: enc.handles[1], collateralProof: enc.inputProof,
+          eLimitPrice: enc.handles[2], limitProof: enc.inputProof,
+        };
+        await writeContractAsync({
+          address: deployment.contracts.DarkpoolEngine, abi: DARK,
+          functionName: "submitOrder", args: [inputs, marketId, isLong, proof.proof],
+        });
+      }
       setSize(""); setCollateral(""); setLimitPrice("");
     } catch (e) { setError((e as Error).message); }
   }
@@ -69,61 +103,84 @@ function Inner() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <SectionHeader
-        eyebrow={
-          <span className="inline-flex items-center gap-1.5">
-            <EyeOff size={11} /> Darkpool
-          </span>
-        }
-        title={<>Submit a <span className="text-noir-accent2">dark</span> limit order</>}
+        eyebrow={<><EyeOff size={10} /> Darkpool</>}
+        title={<>Submit a <span className="shimmer-text">dark</span> limit order</>}
         description="Size, collateral, and limit price are all encrypted on submit. Orders match in-batch — front-running has nothing to read."
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[440px_1fr] gap-6">
+      {/* ============ Hero strip — 3 stats showing privacy posture ============ */}
+      <Card hero className="p-6 relative overflow-hidden animate-fade-up">
+        <div aria-hidden className="absolute -top-32 -left-32 w-[420px] h-[420px] rounded-full bg-noir-cream/[0.05] blur-3xl pointer-events-none" />
+        <div aria-hidden className="absolute -bottom-32 -right-24 w-96 h-96 rounded-full bg-noir-cream/[0.03] blur-3xl pointer-events-none" />
+        <div aria-hidden className="absolute inset-0 bg-grid-dots opacity-[0.18] pointer-events-none [mask-image:radial-gradient(ellipse_at_center,black,transparent_80%)]" />
+
+        <div className="relative grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-3">
+          <PrivacyStat
+            value="3"
+            label="Encrypted fields"
+            sub="size · collateral · limit"
+            icon={<Fingerprint size={14} />}
+            accent="mint"
+          />
+          <PrivacyStat
+            value={String(orders.length)}
+            label="Your active orders"
+            sub="visible row · unreadable contents"
+            icon={<EyeOff size={14} />}
+            accent="neutral"
+          />
+          <PrivacyStat
+            value="batch"
+            label="Match cadence"
+            sub="cross-checked under FHE"
+            icon={<Lock size={14} />}
+            accent="mint"
+          />
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[480px_1fr] gap-6">
         {/* ---------- Left: encrypted submit form ------------------------- */}
-        <div className="space-y-4">
-          <Card className="p-6 space-y-5 relative overflow-hidden">
-            {/* Faint dotted texture inside the card — reinforces the dark vibe. */}
+        <div className="space-y-4 animate-fade-up [animation-delay:80ms]">
+          <Card hero className="p-6 space-y-5 relative overflow-hidden">
             <div
               aria-hidden
-              className="absolute inset-0 bg-grid-dots opacity-30 pointer-events-none [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)]"
+              className="absolute inset-0 bg-grid-dots opacity-25 pointer-events-none [mask-image:linear-gradient(to_bottom,black_20%,transparent_85%)]"
+            />
+            <div
+              aria-hidden
+              className="absolute -top-32 -right-24 w-72 h-72 rounded-full bg-noir-cream/[0.04] blur-3xl pointer-events-none"
             />
             <div className="relative space-y-5">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-noir-white">Dark order</h2>
+                <div>
+                  <div className="font-display text-[16px] font-medium text-noir-cream tracking-tight">Dark order</div>
+                  <div className="text-[11px] text-noir-cream/45 mt-0.5">3 fields encrypted before submission</div>
+                </div>
                 <Badge tone="encrypted" icon={<Fingerprint size={10} />}>
-                  3 encrypted fields
+                  3 encrypted
                 </Badge>
               </div>
 
-              {/* Side toggle */}
-              <div className="grid grid-cols-2 gap-2 p-1 rounded-lg bg-noir-black border border-noir-line">
-                <button
-                  type="button"
-                  onClick={() => setIsLong(true)}
-                  className={clsx(
-                    "flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium transition-all",
-                    isLong
-                      ? "bg-noir-green/15 text-noir-green border border-noir-green/40"
-                      : "text-noir-mute hover:text-noir-white border border-transparent",
-                  )}
-                >
-                  <TrendingUp size={14} /> Long
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsLong(false)}
-                  className={clsx(
-                    "flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium transition-all",
-                    !isLong
-                      ? "bg-noir-red/15 text-noir-red border border-noir-red/40"
-                      : "text-noir-mute hover:text-noir-white border border-transparent",
-                  )}
-                >
-                  <TrendingDown size={14} /> Short
-                </button>
-              </div>
+              <TogglePills
+                value={isLong ? "long" : "short"}
+                onChange={(v) => setIsLong(v === "long")}
+                options={[
+                  { value: "long",  label: "Long",  icon: <TrendingUp size={14} />,   tone: "green" },
+                  { value: "short", label: "Short", icon: <TrendingDown size={14} />, tone: "red" },
+                ]}
+              />
+
+              <TogglePills
+                value={pairMatch ? "p2p" : "pool"}
+                onChange={(v) => setPairMatch(v === "p2p")}
+                options={[
+                  { value: "p2p",  label: "P2P pair-match", tone: "green" },
+                  { value: "pool", label: "Batch vs pool",  tone: "neutral" },
+                ]}
+              />
 
               <Field label="Market">
                 <Select value={marketId} onChange={(e) => setMarketId(Number(e.target.value))}>
@@ -133,14 +190,7 @@ function Inner() {
                 </Select>
               </Field>
 
-              <Field
-                label="Size"
-                trailing={
-                  <span className="inline-flex items-center gap-1 text-noir-accent2">
-                    <Lock size={9} /> encrypted
-                  </span>
-                }
-              >
+              <Field label="Size" trailing={<EncryptedTag />}>
                 <Input
                   type="text"
                   inputMode="decimal"
@@ -153,10 +203,13 @@ function Inner() {
 
               <Field
                 label="Collateral"
-                trailing={
-                  <span className="inline-flex items-center gap-1 text-noir-accent2">
-                    <Lock size={9} /> encrypted
-                  </span>
+                trailing={<EncryptedTag />}
+                hint={
+                  pairMatch && cpuPreview > 0
+                    ? lockMismatch
+                      ? <>P2P locks <span className="text-noir-cream/80">{cpuPreview} × {sizeNum} = {effectiveLock} USDCx</span> (rounded down). Make collateral a multiple of size to avoid the {collNum - effectiveLock} USDCx remainder.</>
+                      : <>P2P locks {cpuPreview} USDCx per unit · {effectiveLock} USDCx total</>
+                    : undefined
                 }
               >
                 <Input
@@ -171,11 +224,7 @@ function Inner() {
 
               <Field
                 label="Limit price"
-                trailing={
-                  <span className="inline-flex items-center gap-1 text-noir-accent2">
-                    <Lock size={9} /> encrypted
-                  </span>
-                }
+                trailing={<EncryptedTag />}
                 hint="Order matches when the oracle price crosses your limit, in batch."
               >
                 <Input
@@ -201,13 +250,13 @@ function Inner() {
               </Button>
 
               {!proof?.allowlisted && (
-                <div className="flex items-start gap-2 text-xs text-noir-amber bg-noir-amber/5 border border-noir-amber/30 rounded-lg p-3">
+                <div className="flex items-start gap-2 text-[12px] text-noir-amber bg-noir-amber/[0.06] border border-noir-amber/30 rounded-xl p-3 backdrop-blur-md">
                   <AlertCircle size={14} className="shrink-0 mt-0.5" />
                   <span>Wallet not on the compliance allowlist.</span>
                 </div>
               )}
               {error && (
-                <div className="flex items-start gap-2 text-xs text-noir-red bg-noir-red/5 border border-noir-red/30 rounded-lg p-3">
+                <div className="flex items-start gap-2 text-[12px] text-noir-red bg-noir-red/[0.06] border border-noir-red/30 rounded-xl p-3 backdrop-blur-md">
                   <AlertCircle size={14} className="shrink-0 mt-0.5" />
                   <span className="font-mono break-all">{error}</span>
                 </div>
@@ -216,9 +265,12 @@ function Inner() {
           </Card>
 
           {/* What gets encrypted — pedagogical card */}
-          <Card className="p-5 space-y-3">
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-noir-mute">
-              What's encrypted
+          <Card className="p-5">
+            <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/[0.05]">
+              <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-noir-cream/45">
+                Field visibility
+              </span>
+              <span className="text-[10px] text-noir-cream/30 font-mono">on-chain</span>
             </div>
             <div className="space-y-1.5">
               <EncryptedRow label="Order size" />
@@ -231,14 +283,17 @@ function Inner() {
         </div>
 
         {/* ---------- Right: active orders -------------------------------- */}
-        <div className="space-y-4">
+        <div className="space-y-4 animate-fade-up [animation-delay:120ms]">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-noir-white">
-              Active orders
-              <span className="text-noir-mute font-normal ml-2">{orders.length}</span>
-            </h2>
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-noir-dim">
-              <Activity size={11} className="text-noir-green" />
+            <div className="flex items-baseline gap-2.5">
+              <h2 className="font-display text-[18px] font-medium text-noir-cream tracking-tight">Active orders</h2>
+              <span className="text-[12px] text-noir-cream/40 font-mono">{orders.length}</span>
+            </div>
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-noir-cream/45">
+              <span className="relative inline-flex w-1.5 h-1.5">
+                <span className="absolute inset-0 rounded-full bg-noir-accent pulse-dot" />
+                <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-noir-accent" />
+              </span>
               auto-refresh 15s
             </span>
           </div>
@@ -251,22 +306,34 @@ function Inner() {
             />
           ) : (
             <div className="space-y-3">
-              {orders.map((o) => (
-                <Card key={o.id.toString()} interactive className="p-5">
+              {orders.map((o, idx) => (
+                <Card
+                  key={o.id.toString()}
+                  interactive
+                  className="p-5 animate-fade-up overflow-hidden"
+                  style={{ animationDelay: `${idx * 60}ms` } as React.CSSProperties}
+                >
                   <div className="flex items-start justify-between gap-4 mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-md bg-noir-raised border border-noir-edge flex items-center justify-center text-[10px] font-semibold text-noir-white">
+                      <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-white/[0.08] to-white/[0.02] border border-white/10 flex items-center justify-center text-[10px] font-semibold text-noir-cream font-display">
                         {marketById(o.marketId)?.symbol ?? "?"}
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-noir-white">
+                        <div className="text-[15px] font-medium text-noir-cream font-display tracking-tight">
                           {marketById(o.marketId)?.symbol}/USD
-                          <span className="text-noir-mute font-normal ml-1.5">#{o.id.toString()}</span>
+                          <span className="text-noir-cream/30 font-mono font-normal ml-2 text-[12px]">
+                            #{o.id.toString()}
+                          </span>
                         </div>
-                        <Badge tone={o.isLong ? "green" : "red"} className="mt-0.5">
-                          {o.isLong ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                          {o.isLong ? "Long" : "Short"}
-                        </Badge>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <Badge tone={o.isLong ? "green" : "red"}>
+                            {o.isLong ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                            {o.isLong ? "Long" : "Short"}
+                          </Badge>
+                          <Badge tone={o.pairMatchEligible ? "encrypted" : "neutral"}>
+                            {o.pairMatchEligible ? "P2P" : "Pool"}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
 
@@ -280,7 +347,7 @@ function Inner() {
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-3 border-t border-noir-line">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs pt-4 border-t border-white/[0.05]">
                     <OrderField
                       label="Size"
                       value={
@@ -317,10 +384,10 @@ function Inner() {
             </div>
           )}
 
-          <div className="flex items-start gap-2 text-[11px] text-noir-dim bg-noir-panel border border-noir-line rounded-lg p-3">
-            <Info size={12} className="shrink-0 mt-0.5 text-noir-accent2" />
-            <span>
-              <span className="text-noir-white font-medium">Batch matching.</span>{" "}
+          <div className="flex items-start gap-2.5 text-[11px] text-noir-cream/45 rounded-xl p-3.5 border border-white/[0.05] bg-white/[0.02] backdrop-blur-md">
+            <Info size={12} className="shrink-0 mt-0.5 text-noir-accent" />
+            <span className="leading-relaxed">
+              <span className="text-noir-cream/80 font-medium">Batch matching.</span>{" "}
               The matcher consumes encrypted orders, runs the cross-check
               under FHE, and emits filled positions. Other addresses can
               see your row exists but cannot read its contents.
@@ -334,10 +401,48 @@ function Inner() {
 
 // ---------- Helpers -------------------------------------------------------
 
+function PrivacyStat({
+  value, label, sub, icon, accent,
+}: {
+  value: string;
+  label: string;
+  sub: string;
+  icon: React.ReactNode;
+  accent: "mint" | "neutral";
+}) {
+  const accentClass = accent === "mint"
+    ? "text-noir-accent border-noir-accent/30 bg-noir-accent/[0.06]"
+    : "text-noir-cream border-noir-cream/15 bg-noir-cream/[0.04]";
+  return (
+    <div className="flex items-start gap-4">
+      <div className={`h-11 w-11 rounded-xl border flex items-center justify-center backdrop-blur-md ${accentClass}`}>
+        {icon}
+      </div>
+      <div>
+        <div className="font-display text-[28px] font-semibold text-noir-cream tabular-nums leading-none tracking-[-0.02em]">
+          {value}
+        </div>
+        <div className="text-[11px] uppercase tracking-[0.16em] text-noir-cream/45 font-medium mt-2">
+          {label}
+        </div>
+        <div className="text-[11px] text-noir-cream/40 mt-1">{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+function EncryptedTag() {
+  return (
+    <span className="inline-flex items-center gap-1 text-noir-accent font-medium tracking-[0.04em]">
+      <Lock size={9} /> encrypted
+    </span>
+  );
+}
+
 function OrderField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-noir-mute mb-1">
+      <div className="text-[10px] uppercase tracking-[0.16em] text-noir-cream/40 mb-1.5 font-medium">
         {label}
       </div>
       <div>{value}</div>
@@ -347,14 +452,14 @@ function OrderField({ label, value }: { label: string; value: React.ReactNode })
 
 function EncryptedRow({ label, plaintext }: { label: string; plaintext?: boolean }) {
   return (
-    <div className="flex items-center justify-between text-xs">
-      <span className="text-noir-dim">{label}</span>
+    <div className="flex items-center justify-between text-xs py-1.5">
+      <span className="text-noir-cream/60">{label}</span>
       {plaintext ? (
-        <span className="inline-flex items-center gap-1 text-noir-mute">
+        <span className="inline-flex items-center gap-1 text-noir-cream/40 font-medium">
           plaintext
         </span>
       ) : (
-        <span className="inline-flex items-center gap-1 text-noir-accent2">
+        <span className="inline-flex items-center gap-1 text-noir-accent font-medium">
           <Lock size={9} /> ciphertext
         </span>
       )}
