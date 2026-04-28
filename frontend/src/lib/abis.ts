@@ -55,6 +55,14 @@ export const DARK_ABI: Abi = [
   ...parseAbi([
     "function nextOrderId() view returns (uint256)",
     "function cancelOrder(uint256 orderId) external",
+    "event OrderSubmitted(uint256 indexed orderId, address indexed owner, uint8 marketId)",
+    "event OrderSubmittedForPair(uint256 indexed orderId, address indexed owner, uint8 marketId, bool isLong)",
+    "event OrderCancelled(uint256 indexed orderId, address indexed owner)",
+    "event OrderClosed(uint256 indexed orderId, string reason)",
+    "event MatchProposed(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId, address requester, bytes32[] handles)",
+    "event MatchSettled(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId, address settler)",
+    "event MatchRejected(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId)",
+    "event MatchAborted(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId, string reason)",
   ] as const),
   {
     name: "submitOrder",
@@ -70,6 +78,32 @@ export const DARK_ABI: Abi = [
           { name: "collateralProof",type: "bytes"   },
           { name: "eLimitPrice",    type: "bytes32" },
           { name: "limitProof",     type: "bytes"   },
+        ],
+      },
+      { name: "marketId",       type: "uint8"    },
+      { name: "isLong",         type: "bool"     },
+      { name: "complianceProof",type: "bytes32[]" },
+    ],
+    outputs: [{ name: "orderId", type: "uint256" }],
+    stateMutability: "nonpayable",
+  },
+  // Phase 11 — pair-eligible submit. Same shape as `submitOrder` but the
+  // middle ciphertext is `eCollateralPerUnit` (= total / size, computed
+  // off-chain at submit time so the engine never needs ciphertext-÷-ciphertext).
+  {
+    name: "submitOrderForPairMatch",
+    type: "function",
+    inputs: [
+      {
+        name: "inputs",
+        type: "tuple",
+        components: [
+          { name: "eSize",                  type: "bytes32" },
+          { name: "sizeProof",              type: "bytes"   },
+          { name: "eCollateralPerUnit",     type: "bytes32" },
+          { name: "collateralPerUnitProof", type: "bytes"   },
+          { name: "eLimitPrice",            type: "bytes32" },
+          { name: "limitProof",             type: "bytes"   },
         ],
       },
       { name: "marketId",       type: "uint8"    },

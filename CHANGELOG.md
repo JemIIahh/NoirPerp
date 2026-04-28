@@ -14,6 +14,26 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-28
 
+### Phase 11 — Frontend Task 9 (partial): pair-match ABI + active-orders decode fix
+
+Lands the Phase 11 frontend pieces that don't entangle with the pre-existing UI polish WIP on `Darkpool.tsx`. The Darkpool page's P2P toggle + submitOrderForPairMatch routing + Type badge live in the working tree but are intentionally left uncommitted alongside the unrelated UI polish — the user will commit them together when ready.
+
+**`frontend/src/lib/abis.ts`** — `DARK_ABI` extended with all 6 new Phase-11 events (`OrderSubmittedForPair`, `OrderClosed`, `MatchProposed`, `MatchSettled`, `MatchRejected`, `MatchAborted`) plus the legacy `OrderSubmitted` + `OrderCancelled` events that were missing from the ABI (silently broken until now). New `submitOrderForPairMatch` JSON-form function entry mirrors `submitOrder` but with the middle ciphertext field renamed to `eCollateralPerUnit` and `collateralPerUnitProof`.
+
+**`frontend/src/hooks/useDarkOrders.ts`** — fixes a now-broken decode: the `DarkOrder` struct gained 2 fields in the Phase 11 contract surface commit (`pairMatchEligible` bool + `collateralPerUnit` ciphertext) but the hook's `GET_ORDER_ABI` still declared the 7-field shape. After Phase 11's storage changes shipped, `useDarkOrders` was decoding misaligned tuple offsets — the active-orders panel would have shown garbled handles. Hook now decodes 9 fields and returns the `pairMatchEligible` flag in the order object. For pair-eligible orders, the user-meaningful `collateralHandle` is sourced from `collateralPerUnit` (the per-unit price they actually picked); legacy orders keep sourcing it from `collateral`.
+
+**`frontend/src/pages/Darkpool.tsx`** (uncommitted, in working tree) — adds:
+- **P2P toggle** (`TogglePills`, default ON for v0.2 per design memo §11). Wires `pairMatch` state to dispatch routing.
+- **`collateralPerUnit` transform**: when toggle is ON, `cpu = floor(collateral / size)` is computed off-chain (avoids the banned ct/ct division) and used in the encryption call. The Collateral field's `hint` shows the effective lock (`cpu × size`) and warns when integer rounding leaves a remainder.
+- **Routing**: pair-match path encrypts `(size, cpu, limitPrice)` and calls `submitOrderForPairMatch`; legacy path unchanged. Both share the same `useEncryptInput` variadic helper.
+- **Type badge** in the active-orders list: `P2P` (encrypted-tone) or `Pool` (neutral) sourced from the new `pairMatchEligible` field.
+
+This file isn't committed because it has ~150 lines of pre-existing UI polish WIP (predates this session — was already in `git status` modified set at session start) intermingled with the ~70 lines of Phase 11 changes. Per CLAUDE.md "don't refactor unrelated code while making a targeted change" — splitting requires the user's judgment on the polish WIP scope. Both contributions tested via `npm run build` (clean) and `npm run lint` (clean) on the bundled file.
+
+**Verification**: `npm run build` clean (271KB gzipped main + 4.5MB lazy-load TFHE WASM unchanged). `npm run lint` clean.
+
+**Files**: `frontend/src/lib/abis.ts` (+34 lines), `frontend/src/hooks/useDarkOrders.ts` (+~12 net).
+
 ### Phase 11 — Bot match watcher (Task 6) + watcher tests (Task 8)
 
 Adds the 5th bot watcher — pair-discovery + on-chain `submitMatchPair` submission — and wires the new `MatchProposed` decrypt event into the existing decrypt-relay so the bot can fulfill its own match callbacks end-to-end. 25 bot tests green (18 prior + 7 new); no regressions.

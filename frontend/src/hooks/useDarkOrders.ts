@@ -21,13 +21,15 @@ const GET_ORDER_ABI: Abi = [
         name: "",
         type: "tuple",
         components: [
-          { name: "owner",      type: "address" },
-          { name: "marketId",   type: "uint8"   },
-          { name: "isLong",     type: "bool"    },
-          { name: "active",     type: "bool"    },
-          { name: "size",       type: "bytes32" },
-          { name: "collateral", type: "bytes32" },
-          { name: "limitPrice", type: "bytes32" },
+          { name: "owner",             type: "address" },
+          { name: "marketId",          type: "uint8"   },
+          { name: "isLong",            type: "bool"    },
+          { name: "active",            type: "bool"    },
+          { name: "pairMatchEligible", type: "bool"    },
+          { name: "size",              type: "bytes32" },
+          { name: "collateral",        type: "bytes32" },
+          { name: "collateralPerUnit", type: "bytes32" },
+          { name: "limitPrice",        type: "bytes32" },
         ],
       },
     ],
@@ -63,19 +65,27 @@ export function useDarkOrders(owner: `0x${string}` | undefined, limit = 50) {
     if (!o) return [];
     // viem decodes named tuple components as an object with named keys.
     // Fall back to indexed access if .owner is missing (parseAbi edge case).
-    const orderOwner: string = o.owner ?? o[0];
-    const marketId: number = o.marketId !== undefined ? Number(o.marketId) : Number(o[1]);
-    const isLong: boolean = o.isLong !== undefined ? o.isLong : o[2];
-    const active: boolean = o.active !== undefined ? o.active : o[3];
-    const size: `0x${string}` = o.size ?? o[4];
-    const collateral: `0x${string}` = o.collateral ?? o[5];
-    const limitPrice: `0x${string}` = o.limitPrice ?? o[6];
+    const orderOwner: string         = o.owner ?? o[0];
+    const marketId: number           = o.marketId !== undefined ? Number(o.marketId) : Number(o[1]);
+    const isLong: boolean            = o.isLong !== undefined ? o.isLong : o[2];
+    const active: boolean            = o.active !== undefined ? o.active : o[3];
+    const pairMatchEligible: boolean = o.pairMatchEligible !== undefined ? o.pairMatchEligible : o[4];
+    const size: `0x${string}`              = o.size ?? o[5];
+    const collateral: `0x${string}`        = o.collateral ?? o[6];
+    const collateralPerUnit: `0x${string}` = o.collateralPerUnit ?? o[7];
+    const limitPrice: `0x${string}`        = o.limitPrice ?? o[8];
 
     if (!orderOwner || orderOwner.toLowerCase() !== owner.toLowerCase()) return [];
     if (!active) return [];
+    // For pair-eligible orders, the user-meaningful collateral handle is
+    // collateralPerUnit (their per-unit price); legacy orders surface
+    // `collateral` directly. Each path's other handle is encrypted-zero.
+    const collateralDisplayHandle = pairMatchEligible ? collateralPerUnit : collateral;
     return [{
-      id, marketId, isLong,
-      sizeHandle: size, collateralHandle: collateral, limitPriceHandle: limitPrice,
+      id, marketId, isLong, pairMatchEligible,
+      sizeHandle: size,
+      collateralHandle: collateralDisplayHandle,
+      limitPriceHandle: limitPrice,
     }];
   });
 }
