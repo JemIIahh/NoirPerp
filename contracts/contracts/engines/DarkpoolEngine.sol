@@ -636,20 +636,53 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
         DarkOrder storage buyOrder  = _orders[m.buyId];
         DarkOrder storage sellOrder = _orders[m.sellId];
 
+        // Snapshot plaintext fields before any state writes — used by the
+        // external-call section below. Snapshotting first lets us hoist the
+        // storage writes ahead of external calls (CEI pattern, defense-in-
+        // depth: even though Vault + Perp aren't user-controlled callable
+        // surfaces today, an inactive flag must be authoritative the moment
+        // an external call lands).
+        address buyOwner    = buyOrder.owner;
+        address sellOwner   = sellOrder.owner;
+        uint8   buyMarket   = buyOrder.marketId;
+        uint8   sellMarket  = sellOrder.marketId;
+
         // Per-side filled collateral = collateralPerUnit × fillSize. Single
-        // FHE.mul each — supported (scalar-style mul is already used in
-        // submitOrderForPairMatch for the total-escrow lock; here it's
-        // ct × ct, also supported in FHEVM v0.11.1).
+        // FHE.mul each — supported in FHEVM v0.11.1 for ct × ct.
         euint64 buyFilledColl  = FHE.mul(buyOrder.collateralPerUnit,  m.fillSize);
         euint64 sellFilledColl = FHE.mul(sellOrder.collateralPerUnit, m.fillSize);
 
+        // ── State changes BEFORE external calls (CEI) ──
+        buyOrder.size  = m.buyResidualSize;
+        sellOrder.size = m.sellResidualSize;
+        // Re-grant owner ACL only on residuals that survive — closed orders
+        // don't need a decryptable size handle (saves ~5k HCU per closed
+        // side). Original size cipher had its grant via `_storeOrderForPair`;
+        // residuals were freshly minted in `_computePairMatch` with engine-
+        // only ACL, so a survivor needs explicit owner re-grant for the
+        // frontend partial-fill progress display per design memo §11.
+        if (buyResidualZero) {
+            buyOrder.active = false;
+            emit OrderClosed(m.buyId, "filled");
+        } else {
+            FHE.allow(buyOrder.size, buyOwner);
+        }
+        if (sellResidualZero) {
+            sellOrder.active = false;
+            emit OrderClosed(m.sellId, "filled");
+        } else {
+            FHE.allow(sellOrder.size, sellOwner);
+        }
+
+        // ── External calls (refunds + Perp opens) ──
         // Refund the filled portion to each user's vault balance. Engine's
         // escrow holds collateralPerUnit × originalSize at this point; we
         // release collateralPerUnit × fillSize, leaving the residual amount
-        // backing the residual order size (auto-correct since `_refundCollateral`
-        // re-derives the product from the updated `size` field on cancel).
-        _refundFilledColl(buyOrder.owner,  buyFilledColl);
-        _refundFilledColl(sellOrder.owner, sellFilledColl);
+        // backing the residual order size (auto-correct since
+        // `_refundCollateral` re-derives the product from the updated `size`
+        // field on cancel).
+        _refundFilledColl(buyOwner,  buyFilledColl);
+        _refundFilledColl(sellOwner, sellFilledColl);
 
         // ACL transient grants for PerpEngine to read the ciphertexts.
         // m.fillSize is reused for both calls — granting once suffices for
@@ -662,25 +695,11 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
         // re-debits the user's vault for the collateral we just refunded — net
         // user balance unchanged; engine escrow drops by filledColl per side.
         PerpEngine(perp).openPositionAsExecutor(
-            buyOrder.owner,  m.fillSize, buyFilledColl,  true,  buyOrder.marketId
+            buyOwner,  m.fillSize, buyFilledColl,  true,  buyMarket
         );
         PerpEngine(perp).openPositionAsExecutor(
-            sellOrder.owner, m.fillSize, sellFilledColl, false, sellOrder.marketId
+            sellOwner, m.fillSize, sellFilledColl, false, sellMarket
         );
-
-        // Update sizes to residuals; close fully-consumed orders atomically.
-        buyOrder.size  = m.buyResidualSize;
-        sellOrder.size = m.sellResidualSize;
-        // Re-grant owner ACL on the new residual ciphertexts so users can
-        // continue user-decrypting their own order's current size (drives the
-        // frontend partial-fill progress display per design memo §11). The
-        // original `size` ciphertext had this grant via `_storeOrderForPair`,
-        // but `m.buyResidualSize` / `m.sellResidualSize` were freshly produced
-        // inside `_computePairMatch` and only got `FHE.allowThis` (engine ACL).
-        FHE.allow(buyOrder.size,  buyOrder.owner);
-        FHE.allow(sellOrder.size, sellOrder.owner);
-        if (buyResidualZero)  { buyOrder.active  = false; emit OrderClosed(m.buyId,  "filled"); }
-        if (sellResidualZero) { sellOrder.active = false; emit OrderClosed(m.sellId, "filled"); }
 
         emit MatchSettled(requestId, m.buyId, m.sellId, m.requester);
     }

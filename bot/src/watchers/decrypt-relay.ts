@@ -88,6 +88,7 @@ export async function handleMatchDecrypt(args: BatchDecryptArgs): Promise<void> 
  *   LimitEngine.TriggerRequested(requestId, orderId, keeper, shouldTriggerHandle)     — 4 args
  *   AMMEngine.WithdrawRequested(requestId, user, claimedShares, matchHandle)          — 4 args
  *   DarkpoolEngine.BatchMatchRequested(requestId, keeper, orderIds, handles)          — 4 args
+ *   DarkpoolEngine.MatchProposed(requestId, buyId, sellId, requester, handles)        — 5 args (Phase 11)
  */
 export function subscribeDecryptRelay(
   perpRO: Contract, perpRW: Contract,

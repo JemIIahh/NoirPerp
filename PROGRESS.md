@@ -168,6 +168,36 @@ fuzz + HCU benchmarks + per-contract sign-off) runs once in Phase 9.
 - [ ] **Phase 10 — Docs + video + submission**
   Plan: *(not yet written)*
 
+- [x] **Phase 11 — Darkpool peer-to-peer pair matching** ✅ (2026-04-28)
+  Plan: `docs/plans/2026-04-28-phase-11-darkpool-pair-match.md`
+  Design memo: `docs/specs/2026-04-28-darkpool-pair-match-design.md`
+  Completion criteria met: `submitOrderForPairMatch` + `submitMatchPair`
+  + `_onMatchDecided` live with partial-fill + residual semantics +
+  Approach-B 3-bool batched decrypt; bot match watcher (5th watcher)
+  with FIFO pair selection + 10-block back-off + MatchAborted handling;
+  frontend ABI + decode fix + P2P toggle (Darkpool.tsx UI bundled with
+  pre-existing UI polish WIP, left in working tree). 14 Solidity
+  MatchPair tests + 7 bot match-watcher tests; 302 contract tests + 25
+  bot tests passing total (288 + 14, 18 + 7); zero regressions. Tier 1
+  audit: spec-compliance reviewer GREEN (0 critical, 0 important, 2
+  minor, 4 observations) + code-quality reviewer GREEN-with-minor (0
+  critical, 0 important, 4 minor — 3 fixed pre-tick, 1 verified safe).
+  Two contract bugs caught + fixed during test development: (a)
+  concurrent-cancel safety guard via new `MatchAborted` event +
+  active-flag re-check in callback (correcting design memo §9 which
+  originally said "callback proceeds even on cancelled" — wrong; would
+  have stolen `cpu × fillSize` from cancelled user); (b) missing owner
+  ACL on residual size cipher after partial fill (would have broken
+  frontend partial-fill progress display per §11). 3 Phase-11 spec
+  deviations introduced: oracle-pegged settlement (not midpoint of
+  limits — midpoint would leak the price range), all-or-nothing on the
+  smaller order with residual on the larger, plaintext self-match
+  prevention via owner addresses. Coverage measurement deferred —
+  FHEVM hardhat plugin incompatible with solidity-coverage
+  instrumentation (carry-forward from Phase 7 known limitation); every
+  new function has at least one test per CLAUDE.md "every new function
+  ships with a unit test" gate.
+
 ---
 
 ## Phase-writing protocol

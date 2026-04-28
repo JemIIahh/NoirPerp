@@ -14,6 +14,42 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-28
 
+### Phase 11 — Tier 1 audit + tick (Tasks 11 + 12) ✅
+
+Phase 11 (Darkpool peer-to-peer pair matching) ticks complete. All 12 plan tasks done. 302 contract tests + 25 bot tests passing.
+
+**Tier 1 audit results**:
+
+- **Spec-compliance reviewer**: VERDICT GREEN. 0 critical, 0 important, 2 minor, 4 observations. All 5 plaintext-invariant reverts present in `submitMatchPair`; 3-bool batched decrypt (Approach B) implemented with locked handle order `[intersects, buyResidualZero, sellResidualZero]`; `collateralPerUnit × fillSize` math single-FHE.mul throughout (no ct÷ct anywhere); callback ordering `checkSignatures → _dequeue → external` preserved (CLAUDE.md rule 6); `FHE.isSenderAllowed` checked on every external ciphertext input (rule 4); `FHESafeMath.safeSub` used for residual computation (rule 3); bot watcher matches design memo §12 pseudo-code (FIFO by orderId-sum, BACKOFF_BLOCKS=10, one pair per tick, distinct-owner filter); 12 plan-required failure modes all covered by tests + 13th bonus test for `MatchAborted`; `useDarkOrders` decode order matches `DarkOrder` struct field-for-field. 2 minor (no `handleMatchDecrypt` unit test — symmetric with tested `handleBatchDecrypt`, deferred; stale 4-arg comment in decrypt-relay.ts header — fixed in this commit).
+
+- **Code-quality reviewer**: VERDICT GREEN-with-minor. 0 critical, 0 important, 4 minor, 4 observations. ACL discipline correct (engine uses `allowTransient` only for cross-engine; persistent `FHE.allow` only on user-owned ciphertexts; residual ACL fix from 37679cf verified correct); no raw `FHE.sub`/`FHE.add` outside `FHESafeMath`; no ct÷ct anywhere; replay guard ordering correct in `_onMatchDecided`; concurrent-cancel guard verified correct + sufficient via test 7.11b; HCU sequential ~1.34M for `submitMatchPair` (matches design memo §8 estimate of ~1.30M); storage layout matches frontend decode; integer-division UX warning present in Darkpool form; bot watcher race ordering on `OrderClosed` vs `MatchSettled` analyzed safe; reentrancy analyzed (Vault + Perp not user-controlled callable surfaces; "external-then-state" pattern flagged for defense-in-depth); event indexing complete on all key fields; partial-fill math spot-checked in tests 7.3 + 7.9. 4 minor: (1) hoist storage writes above Perp external calls (CEI hardening) — **fixed**; (2) skip residual `FHE.allow` for closed orders (~5k HCU savings per closed side) — **fixed**; (3) add `OracleNotSet`/`PerpNotSet` test on `submitMatchPair` — **fixed** (test 7.13 added); (4) verify `TrackedSet.list()` returns snapshot — **verified safe** (`return [...this.inner]` is a spread snapshot, not a live view).
+
+**Audit-driven fixes in this commit**:
+
+- `_applyPairFill` refactored to canonical CEI ordering: storage writes (`buyOrder.size`, `sellOrder.size`, `active = false`, conditional `FHE.allow`, `OrderClosed` events) all happen BEFORE external calls (refunds + Perp opens). Owner address + market id snapshotted into locals before any state writes so the external section reads only locals. Defense-in-depth — Vault + Perp aren't user-controlled callable today, but the inactive flag is now authoritative the moment any external call lands. No exploitable reentrancy exists; this is hygiene.
+- Residual `FHE.allow(buyOrder.size, owner)` / `FHE.allow(sellOrder.size, owner)` now skipped when `residualZero` (the order is being closed; granting decryptable ACL on a zero-cipher to an inactive order is wasted ~5k HCU per side). Closed orders don't need a decryptable size handle in the frontend per design memo §11 — only active residuals do.
+- `bot/src/watchers/decrypt-relay.ts` header comment updated to list `MatchProposed` (5-arg) alongside the 4 existing 4-arg events. Stale comment from before Phase 11.
+- New test 7.13 in `DarkpoolEngine.MatchPair.test.ts` covers the admin-misconfiguration reverts: `OracleNotSet` on a fresh DarkpoolEngine, then `PerpNotSet` after wiring Oracle but not Perp. Brings total Phase 11 Solidity tests to 14.
+
+**Phase 11 final scorecard**:
+
+| Metric | Value |
+|---|---|
+| Plan tasks complete | 12 / 12 (Task 9 frontend Darkpool.tsx UI in working tree, uncommitted by design) |
+| Contract tests | 302 passing (288 prior + 14 Phase 11 MatchPair) |
+| Bot tests | 25 passing (18 prior + 7 Phase 11 match watcher) |
+| New events | `OrderSubmittedForPair`, `OrderClosed`, `MatchProposed`, `MatchSettled`, `MatchRejected`, `MatchAborted` |
+| New errors | `PairOrderInactive`, `PairOrderNotEligible`, `PairOrdersSameOwner`, `PairOrdersDifferentMarket`, `PairOrdersSameSide`, `PairOrdersWrongCanonicalization` |
+| New external functions | `submitOrderForPairMatch`, `submitMatchPair`, `_onMatchDecided` |
+| HCU sequential per pair | ~1.34M (`submitMatchPair`) + ~0.70M (`_onMatchDecided`) — both well under 5M ceiling |
+| Spec deviations introduced | 3 (oracle-pegged settlement, smaller-fully-consumed, plaintext self-match check) — all documented in NatSpec |
+| Tier 1 audit | GREEN both reviewers; all 0 critical / 0 important findings |
+| Coverage measurement | deferred — FHEVM hardhat plugin incompatible with solidity-coverage instrumentation; per-function-test gate from CLAUDE.md is met |
+
+**Deployment status**: Phase 11 contract changes are NOT yet deployed to Sepolia. The current Sepolia Darkpool contract is the Phase-9-deployed Phase-6 surface. Re-deploy for Phase 11 is acceptance criterion #7 in the plan; left for a follow-up session per CLAUDE.md "no proactive deploys" — needs explicit user trigger to push the upgraded engine to Sepolia + write new addresses to `deployments/sepolia.json` + verify on Etherscan.
+
+**Files (this commit)**: `contracts/contracts/engines/DarkpoolEngine.sol` (CEI hoist + skip-closed-ACL), `contracts/test/DarkpoolEngine.MatchPair.test.ts` (+test 7.13), `bot/src/watchers/decrypt-relay.ts` (header comment), `PROGRESS.md` (Phase 11 row + tick), `CHANGELOG.md` (this entry).
+
 ### Phase 11 — Frontend Task 9 (partial): pair-match ABI + active-orders decode fix
 
 Lands the Phase 11 frontend pieces that don't entangle with the pre-existing UI polish WIP on `Darkpool.tsx`. The Darkpool page's P2P toggle + submitOrderForPairMatch routing + Type badge live in the working tree but are intentionally left uncommitted alongside the unrelated UI polish — the user will commit them together when ready.

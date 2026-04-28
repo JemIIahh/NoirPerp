@@ -422,4 +422,18 @@ describe("DarkpoolEngine — submitMatchPair + _onMatchDecided (Phase 11)", () =
     await expect(dark.connect(keeper).submitMatchPair(buyId, sellId))
       .to.be.revertedWithCustomError(dark, "OraclePriceStale");
   });
+
+  // 7.13 — admin-misconfiguration reverts on submitMatchPair
+  it("reverts OracleNotSet / PerpNotSet on a fresh DarkpoolEngine before admin wires Oracle/Perp", async () => {
+    const F = await hre.ethers.getContractFactory("DarkpoolEngine");
+    const fresh = (await F.deploy(await vault.getAddress(), admin.address)) as unknown as DarkpoolEngine;
+    await fresh.waitForDeployment();
+    // OracleNotSet: nothing wired.
+    await expect(fresh.connect(keeper).submitMatchPair(0n, 1n))
+      .to.be.revertedWithCustomError(fresh, "OracleNotSet");
+    // Wire oracle, leave perp unset → PerpNotSet.
+    await (await fresh.setOracle(await oracle.getAddress())).wait();
+    await expect(fresh.connect(keeper).submitMatchPair(0n, 1n))
+      .to.be.revertedWithCustomError(fresh, "PerpNotSet");
+  });
 });
