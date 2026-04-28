@@ -14,6 +14,74 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-28
 
+### Phase 11 — Darkpool peer-to-peer pair matching: design memo + contract surface (Tasks 1–5 + 10)
+
+Implementing the most-cited functional gap vs ZKPerp without weakening NoirPerp's privacy threat model. Tasks 1, 2, 3, 4, 5, and 10 from the Phase 11 plan land in this commit; Tasks 6 (bot match watcher), 7 (Solidity tests), 8 (bot tests), 9 (frontend updates), 11 (Tier 1 audit), and 12 (PROGRESS tick) are next-session work.
+
+**Task 1** — Design memo at `docs/specs/2026-04-28-darkpool-pair-match-design.md`:
+- Threat model preserved (nobody, including matcher, learns prices) — explicit re-statement
+- Per-field encrypted/plaintext table for the new `DarkOrder` shape
+- Matching algorithm (bot uses plaintext metadata only, on-chain FHE verifies intersect)
+- Settlement at oracle price decision locked (midpoint would leak range)
+- Collateral-per-unit shape justified (avoids banned ct/ct division on partial fills)
+- Partial-fill semantic explicit (smaller fully consumed, larger has residual)
+- 10 failure modes mapped to test cases
+- HCU budget verified: ~1.30M sequential `submitMatchPair` + ~0.70M `_onMatchDecided` callback (both well under 5M)
+- Storage layout impact (additive, no migration)
+- Backward compat (legacy `submitOrder` + `requestBatchMatch` work unchanged; pair-eligible orders explicitly rejected from batch flow)
+
+**Task 2** — Storage + struct changes in `DarkpoolEngine.sol`:
+- `DarkOrder` gains `bool pairMatchEligible` + `euint64 collateralPerUnit`. Legacy orders set `pairMatchEligible = false` and `collateralPerUnit = euint64.wrap(0)` (zero handle, no HCU cost). Pair orders mirror with `collateral = euint64.wrap(0)`.
+- New `PendingMatch` struct stores the 9 fields needed by `_onMatchDecided`: `buyId`, `sellId`, `intersects` ebool, `fillSize`, `buyResidualSize`, `sellResidualSize`, `buyResidualZero` ebool, `sellResidualZero` ebool, `requester`.
+- New mapping `_pendingMatches[requestId] => PendingMatch`.
+- 6 new error types: `PairOrderInactive`, `PairOrderNotEligible`, `PairOrdersSameOwner`, `PairOrdersDifferentMarket`, `PairOrdersSameSide`, `PairOrdersWrongCanonicalization`.
+- 4 new events: `OrderSubmittedForPair(orderId, owner, marketId, isLong)`, `OrderClosed(orderId, reason)`, `MatchProposed(requestId, buyId, sellId, requester, handles)`, `MatchSettled(requestId, buyId, sellId, settler)`, `MatchRejected(requestId, buyId, sellId)`.
+- `_storeOrder` updated to fill the new fields with zero-handles for legacy.
+- New `_storeOrderForPair` mirrors `_storeOrder` for the pair-eligible path.
+- `_refundCollateral` extended: legacy refunds `order.collateral`; pair-eligible refunds `FHE.mul(order.collateralPerUnit, order.size)`. Self-correcting after partial fills since `size` shrinks to residual.
+- `requestBatchMatch` rejects pair-eligible orders with `PairOrderNotEligible` (defensive — matcher bot wouldn't submit them anyway).
+
+**Task 3** — `submitOrderForPairMatch(SubmitPairOrderInputs, marketId, isLong, complianceProof)`:
+- New `SubmitPairOrderInputs` struct shadows `SubmitOrderInputs` with the field renamed to `eCollateralPerUnit`.
+- New `_importPairInputs` helper does the same `FHE.fromExternal` + `FHE.isSenderAllowed` checks as `_importInputs`.
+- Locks total escrow `collateralPerUnit × size` via `FHE.mul` + existing `_lockCollateral`. On partial fills, the engine retains `collateralPerUnit × residualSize` automatically (size updates to residual; refund re-derives the product).
+- KYC proof verification + market validity check identical to legacy path.
+- Emits `OrderSubmittedForPair` with `isLong` (which the legacy `OrderSubmitted` lacks) so the matcher bot can filter pair candidates without reading per-order storage.
+
+**Task 4** — `submitMatchPair(buyId, sellId)`:
+- Plaintext invariants checked first (5 reverts): both active, both pair-eligible, distinct owners, same market, opposite sides, canonical ordering (buyId must be the long side).
+- Oracle freshness gate (existing `OraclePriceStale` reused).
+- FHE compute extracted into `_computePairMatch` helper to avoid stack-too-deep:
+  - `intersects = FHE.le(sellLimit, buyLimit)` — does the price range overlap?
+  - `buySmaller = FHE.le(buy.size, sell.size)` — for `min` via select
+  - `fillSize = FHE.select(buySmaller, buy.size, sell.size)` — the actual fill quantity
+  - `buyResidual = FHESafeMath.safeSub(buy.size, fillSize)` — saturating
+  - `sellResidual = FHESafeMath.safeSub(sell.size, fillSize)` — saturating
+  - `buyResidualZero = FHE.eq(buyResidual, 0)` and `sellResidualZero = FHE.eq(sellResidual, 0)`
+- ACL grants + `makePubliclyDecryptable` extracted into `_publishPairHandles` helper. Three handles emitted in canonical order: `[intersects, buyResidualZero, sellResidualZero]`.
+- Enqueue via existing `_enqueue(requestId, sender, 0, ctx)` + store the `PendingMatch` for the callback.
+- Emits `MatchProposed` event with the 3-handle list (Gateway picks them up identically to the existing `BatchMatchRequested` flow).
+
+**Task 5** — `_onMatchDecided` callback (Approach B, 3-bool batched decrypt):
+- Canonical pattern: `FHE.checkSignatures(handlesList, cleartexts, decryptionProof)` → `_dequeue(requestId)` (replay guard) → external work.
+- Reuses `_decodeBatch(cleartexts, 3)` from Phase 6 — flat-tuple cleartext encoding, assembly word extraction. Returns `[intersects, buyResidualZero, sellResidualZero]` as `uint256[]`.
+- If `!intersects`: emits `MatchRejected`, both orders remain active, no fills.
+- If intersects: `_applyPairFill` settles:
+  - Computes per-side filled collateral: `FHE.mul(order.collateralPerUnit, fillSize)` for both sides
+  - Refunds filled collateral from engine escrow back to each user's vault (so PerpEngine can debit it normally on `openPositionAsExecutor`)
+  - Single `FHE.allowTransient` per ciphertext per address (transient ACL persists for the whole tx — granting once before both `openPositionAsExecutor` calls is correct)
+  - Two `PerpEngine.openPositionAsExecutor` calls: one long for the buyer, one short for the seller, both at `fillSize` size with their respective filled collateral
+  - Updates orders' `size` field to residuals
+  - Closes fully-consumed orders (`active = false` + `OrderClosed` event when `residualZero`)
+  - Emits `MatchSettled` with the requestId + order IDs + requester
+- New helper `_refundFilledColl(user, amt)` — releases `amt` from engine escrow back to user, mirrors the legacy `_refundCollateral` shape.
+
+**Task 10** — NatSpec inline + top-of-file deviation block. Top-of-file documents both settlement paths (Phase-6 batch-vs-pool legacy + Phase-11 pair-match new) + 3 Phase-11 spec deviations (oracle-pegged settlement, smaller-fully-consumed semantic, self-match-prevention plaintext check). Per-function NatSpec on every new public + internal function with HCU estimates and links to the design doc.
+
+**Verification**: `npx hardhat compile` clean. Existing 30 Darkpool tests still pass — 0 regressions. The new `submitMatchPair` + `_onMatchDecided` paths have zero test coverage in this commit; that's Task 7 (next session).
+
+**Files**: `contracts/contracts/engines/DarkpoolEngine.sol` (+~330 lines), `docs/specs/2026-04-28-darkpool-pair-match-design.md` (new, ~280 lines).
+
 ### Phase 11 plan written — Darkpool peer-to-peer pair matching
 
 `docs/plans/2026-04-28-phase-11-darkpool-pair-match.md`. Closes the most-cited functional gap vs ZKPerp (real partial fills + buyer↔seller pairing) **without weakening the threat model** — nobody, including the off-chain matcher bot, learns user limit prices in the new flow. 12 tasks, ~16-18 hours.
