@@ -105,6 +105,12 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
     event MatchProposed(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId, address requester, bytes32[] handles);
     event MatchSettled(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId, address settler);
     event MatchRejected(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId);
+    /// @notice Phase 11 — fired when a pair match's callback runs but one
+    ///         or both orders were cancelled during the in-flight decrypt
+    ///         window. No fills, no positions opened, no penalty — both
+    ///         users keep their state. The bot should remove these orders
+    ///         from its candidate pool on this event.
+    event MatchAborted(uint256 indexed requestId, uint256 indexed buyId, uint256 indexed sellId, string reason);
 
     error NotAdmin();
     error ZeroAddress();
@@ -604,6 +610,16 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
             return;                                // both orders remain active
         }
 
+        // Concurrent-cancel safety: if either order was cancelled during
+        // the in-flight decrypt window, escrow has already been refunded
+        // to the user via cancelOrder. Opening a position now would either
+        // double-charge them or silent-zero on insufficient balance —
+        // either way wrong. Skip the fill cleanly; both users keep state.
+        if (!_orders[m.buyId].active || !_orders[m.sellId].active) {
+            emit MatchAborted(requestId, m.buyId, m.sellId, "cancelled during decrypt");
+            return;
+        }
+
         _applyPairFill(m, buyResidualZero, sellResidualZero, requestId);
     }
 
@@ -655,6 +671,14 @@ contract DarkpoolEngine is DecryptQueue, ZamaEthereumConfig {
         // Update sizes to residuals; close fully-consumed orders atomically.
         buyOrder.size  = m.buyResidualSize;
         sellOrder.size = m.sellResidualSize;
+        // Re-grant owner ACL on the new residual ciphertexts so users can
+        // continue user-decrypting their own order's current size (drives the
+        // frontend partial-fill progress display per design memo §11). The
+        // original `size` ciphertext had this grant via `_storeOrderForPair`,
+        // but `m.buyResidualSize` / `m.sellResidualSize` were freshly produced
+        // inside `_computePairMatch` and only got `FHE.allowThis` (engine ACL).
+        FHE.allow(buyOrder.size,  buyOrder.owner);
+        FHE.allow(sellOrder.size, sellOrder.owner);
         if (buyResidualZero)  { buyOrder.active  = false; emit OrderClosed(m.buyId,  "filled"); }
         if (sellResidualZero) { sellOrder.active = false; emit OrderClosed(m.sellId, "filled"); }
 

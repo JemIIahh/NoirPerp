@@ -14,6 +14,41 @@ solved design decisions; give future agents full context.
 
 ## 2026-04-28
 
+### Phase 11 — Darkpool pair matching: Task 7 tests + concurrent-cancel guard + residual-ACL fix
+
+Lands the 13-test suite for `submitMatchPair` + `_onMatchDecided` (Phase 11 Task 7) plus two contract corrections that the tests forced. All 301 contract tests green (288 prior + 13 new); 0 regressions.
+
+**Test file** — `contracts/test/DarkpoolEngine.MatchPair.test.ts` (~330 lines, 13 cases):
+- `7.1 happy path`: equal sizes intersect → both close, 2 positions opened at oracle price, balances net to 19_000 each (deposit 20k − lock 1k + refund 1k − perp debit 1k).
+- `7.2 no-intersect`: sellLimit > buyLimit → callback emits `MatchRejected`, both orders stay active, 0 positions.
+- `7.3 partial fill`: buy 10 vs sell 7 → fillSize 7, buy stays active with residual 3 (verified via owner user-decrypt of new `order.size`), sell closes; alice ends 18_000, bob 17_900.
+- `7.4 residual rematches`: charlie's 3-size short pairs against alice's 3-residual buy → both close, 4 total positions.
+- `7.5 self-match`: same owner → revert `PairOrdersSameOwner`.
+- `7.6 cross-market`: BTC buy + ETH sell → revert `PairOrdersDifferentMarket`.
+- `7.7 same-side` (combined): two longs → revert `PairOrdersSameSide`; opposite sides but `(short, long)` arg order → revert `PairOrdersWrongCanonicalization`.
+- `7.8 inactive` (combined): cancelled order → revert `PairOrderInactive`; legacy (batch-only) order paired with a pair-eligible one → revert `PairOrderNotEligible`.
+- `7.9 MAX_LEVERAGE`: 3000× leverage → pair flow completes (MatchSettled emitted, 2 positions written), PerpEngine silent-zeros the position (verified via balance: net 20_000 each since perp debit was 0).
+- `7.10 replay guard`: second `_onMatchDecided` call with the same requestId → revert `DecryptNotPending`.
+- `7.11 both-close events`: equal sizes → both `OrderClosed` events emitted with `reason = "filled"`.
+- `7.11b concurrent cancel during decrypt`: validates the safety guard (see below) — emits `MatchAborted`, no positions opened, balances reflect cancel-time refund only.
+- `7.12 stale oracle`: time-warp past `STALENESS` → revert `OraclePriceStale`.
+
+**Contract fix #1 — concurrent-cancel safety guard in `_onMatchDecided`** (~10 lines added to `DarkpoolEngine.sol`):
+- New event `MatchAborted(requestId, buyId, sellId, reason)` + a 4-line guard at the top of the post-intersect path checking `_orders[m.buyId].active && _orders[m.sellId].active` before `_applyPairFill`. If either flag was flipped during the in-flight decrypt window, the callback emits `MatchAborted` and returns cleanly.
+- **Root cause**: design memo §9 originally claimed "callback completes; refunded order's residual update is a no-op semantically" — wrong. The cancelled side's collateral was already refunded by `cancelOrder`, so the engine's escrow balance no longer covers that side. `_refundFilledColl` would then `safeSub` from a too-small balance, the user would get a wrong-zero refund, and `openPositionAsExecutor` would re-debit them anyway → net steal of `filledColl` from the cancelled user.
+- **What was tried before settling on this fix**: considered making the cancel itself check for in-flight decrypts and revert (rejected: races against Gateway delivery; cancel must be unconditional from the user's perspective). Considered having the callback re-lock collateral mid-flight (rejected: requires permanently granting engine ACL on user vault, which violates the engine-only-uses-allowTransient rule from CLAUDE.md). The chosen fix (skip the fill, both users keep state) is the only solution consistent with the threat model.
+- The bot must remove aborted orders from its candidate pool on `MatchAborted` (Task 6 wires this).
+
+**Contract fix #2 — owner ACL on residual size in `_applyPairFill`** (`FHE.allow(buyOrder.size, buyOrder.owner)` + same for sell, 2 lines):
+- **Root cause**: `_computePairMatch` produces fresh `buyResidualSize` / `sellResidualSize` ciphertexts and only grants engine ACL via `_publishPairHandles`. When `_applyPairFill` writes these into `order.size`, the new ciphertext has no owner ACL — so the order's owner can't user-decrypt their own current size after a partial fill.
+- **What broke without it**: test 7.3 failed at `userDecryptEuint(buyOrder.size, ..., alice)` with "User is not authorized to user decrypt handle". Symmetric failure would hit the frontend partial-fill progress display (design memo §11 — "current encrypted size vs original encrypted size").
+- The original `size` ciphertext at submit time had this grant via `_storeOrderForPair`; the residual ciphertext didn't inherit it (FHE ACL is per-handle, not slot).
+- Fix is unconditional (granted even on closed orders). Cheap (~5k HCU) and avoids a branch on `residualZero`.
+
+**Files**: `contracts/contracts/engines/DarkpoolEngine.sol` (+12 lines net), `contracts/test/DarkpoolEngine.MatchPair.test.ts` (new, ~330 lines).
+
+**Verification**: `npx hardhat test` → 301 passing (was 288 pre-Task-7). `npx hardhat test --grep "submitMatchPair"` → 13 passing. No coverage run yet; Task 11 (Tier 1 audit) will run `npx hardhat coverage` and gate ≥90% stmts/funcs/lines on the new functions.
+
 ### Phase 11 — Darkpool peer-to-peer pair matching: design memo + contract surface (Tasks 1–5 + 10)
 
 Implementing the most-cited functional gap vs ZKPerp without weakening NoirPerp's privacy threat model. Tasks 1, 2, 3, 4, 5, and 10 from the Phase 11 plan land in this commit; Tasks 6 (bot match watcher), 7 (Solidity tests), 8 (bot tests), 9 (frontend updates), 11 (Tier 1 audit), and 12 (PROGRESS tick) are next-session work.
