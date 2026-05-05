@@ -2,7 +2,7 @@
 
 A walkthrough for **using** NoirPerp on Ethereum Sepolia testnet. If you're trying to develop on top of NoirPerp instead, see `docs/specs/` and `docs/plans/` for the design + implementation details.
 
-> **TL;DR** — NoirPerp is a perpetual-futures DEX where every position, balance, and order is encrypted end-to-end using Zama's FHE on Ethereum. You can trade BTC, ETH, and SOL perps with up to 10× leverage; nobody (not even the protocol) sees your numbers.
+> **TL;DR** — NoirPerp is a perpetual-futures DEX where every position, balance, and order is encrypted end-to-end using Zama's FHE on Ethereum. Trade BTC and ETH perps (SOL is supported by design but disabled on Sepolia — Chainlink hasn't deployed a SOL/USD feed there) with up to ≤25× leverage; nobody (not even the protocol) sees your numbers. Phase 11 added P2P pair-matching: two users with opposite-side encrypted orders can settle directly against each other without revealing prices or sizes.
 
 ---
 
@@ -34,13 +34,15 @@ The chain stores only ciphertexts. The protocol's engines compute on ciphertexts
 | PerpEngine | `0x3eE74fd082078B6aEEE3aA082606b12332Fd2678` | [view](https://sepolia.etherscan.io/address/0x3eE74fd082078B6aEEE3aA082606b12332Fd2678#code) |
 | AMMEngine | `0xE8B4fa802B7169a8c4972DeA2C6fc1503e3E2B99` | [view](https://sepolia.etherscan.io/address/0xE8B4fa802B7169a8c4972DeA2C6fc1503e3E2B99#code) |
 | LimitEngine | `0xdd4Dce185C7fb44ad60744ebb65951580EA8FE79` | [view](https://sepolia.etherscan.io/address/0xdd4Dce185C7fb44ad60744ebb65951580EA8FE79#code) |
-| DarkpoolEngine | `0x2031EF7D423bfF2FCa89C335919b11421317bD3d` | [view](https://sepolia.etherscan.io/address/0x2031EF7D423bfF2FCa89C335919b11421317bD3d#code) |
+| DarkpoolEngine v2 | `0x199012e4A7Dd6D7d6B2C4bd49B31Cc9b5Fe80F84` | [view](https://sepolia.etherscan.io/address/0x199012e4A7Dd6D7d6B2C4bd49B31Cc9b5Fe80F84#code) |
 | Oracle | `0xc6fC99BBBF12689831558c7B315bd9b5EdcBc3C0` | [view](https://sepolia.etherscan.io/address/0xc6fC99BBBF12689831558c7B315bd9b5EdcBc3C0#code) |
 | Compliance | `0x8cEc42F9Bd9D464dB7f9DF15C8A4ceecADE25E40` | [view](https://sepolia.etherscan.io/address/0x8cEc42F9Bd9D464dB7f9DF15C8A4ceecADE25E40#code) |
 | cUSDCMock (Zama) | `0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639` | [view](https://sepolia.etherscan.io/address/0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639#code) |
 | underlying USDC mock | `0x9b5Cd13b8eFbB58Dc25A05CF411D8056058aDFfF` | [view](https://sepolia.etherscan.io/address/0x9b5Cd13b8eFbB58Dc25A05CF411D8056058aDFfF#code) |
 
 All seven NoirPerp contracts are **source-verified** — click any link and you can read the full Solidity. The cUSDCMock is Zama's pre-deployed canonical confidential USDC on Sepolia (we did not redeploy our own).
+
+A previous `DarkpoolEngine v1` lives at [`0x2031…bD3d`](https://sepolia.etherscan.io/address/0x2031EF7D423bfF2FCa89C335919b11421317bD3d) — left vault-authorized so any orders placed before the Phase 11 redeploy can still be cancelled. New orders go through v2.
 
 ---
 
@@ -62,18 +64,27 @@ You need any standard Ethereum wallet. **MetaMask** and **OKX Wallet** are confi
 | Currency symbol | `ETH` |
 | Block explorer | `https://sepolia.etherscan.io` |
 
-### 2. Get test cUSDCMock (~1 min)
+### 2. Get test cUSDCMock (~30 seconds)
 
-NoirPerp's collateral is **cUSDCMock** — Zama's confidential USDC mock at `0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639`. To get some:
+NoirPerp's collateral is **cUSDCMock** (a.k.a. **USDCx**) — Zama's confidential USDC mock at `0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639`. To get some:
 
-**Path A** — Mint underlying + wrap (if you're comfortable with Etherscan):
+**Path A — Use the `/faucet` page (recommended, 1 button)**:
+
+1. Visit `/faucet` in the frontend.
+2. Click **Mint 10,000 USDCx**.
+3. Confirm three transactions in your wallet (mint underlying USDC → approve the wrapper → wrap into encrypted balance). On repeat mints the approve step is skipped — only two wallet popups.
+4. Done. The page shows your wrapped balance + an Etherscan link to the wrap tx.
+
+You can re-run as many times as you want; the underlying mock has open mint with no rate limit.
+
+**Path B — Manual via Etherscan** (if for some reason you can't use the frontend):
 
 1. Go to [the underlying USDC mock on Etherscan](https://sepolia.etherscan.io/address/0x9b5Cd13b8eFbB58Dc25A05CF411D8056058aDFfF#writeContract).
 2. Connect your wallet → click **`mint`** → enter your address as `to` and `1000000000000` as `amount` (1M USDC at 6 decimals) → submit.
 3. Approve cUSDCMock to spend it: same page → **`approve`** → spender `0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639`, amount `1000000000000` → submit.
 4. Wrap into confidential balance: go to [cUSDCMock on Etherscan](https://sepolia.etherscan.io/address/0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639#writeProxyContract) → **`wrap`** → `to` = your address, `amount` = `1000000000000` → submit.
 
-**Path B** — Use the admin wallet (if you're the deployer): the deployer key already has 1,000,000 cUSDCMock from `setup-sepolia.ts`. Skip step 2, your balance is already there.
+**Path C — You're the deployer**: the admin key already has cUSDCMock minted from `setup-sepolia.ts`. Skip these steps entirely.
 
 ### 3. Get on the KYC allowlist (~5 min the first time)
 
@@ -90,7 +101,7 @@ Visit the NoirPerp frontend (link wherever the team has hosted it; or run locall
 
 1. Click **Connect Wallet**, pick your wallet.
 2. Confirm the network is Sepolia. If the connect button says "Wrong network" in red, click it → switch to Sepolia.
-3. Go to **Trade** → pick a market (BTC, ETH, or SOL).
+3. Go to **Trade** → pick a market (BTC or ETH; SOL is hidden on Sepolia).
 4. Pick a side (Long or Short).
 5. Enter **Size** (e.g., `10`) and **Collateral** (e.g., `1000`). These get encrypted in your browser before being sent on-chain — neither the chain nor any node operator ever sees the plaintext values.
 6. Click **Open Position**. Sign the FHE-input-proof transaction in your wallet.
@@ -108,7 +119,7 @@ If the reveal returns `0` instead of your value, you're probably running against
 
 ---
 
-## The 6 frontend pages
+## The 7 frontend pages
 
 ### `/` — Landing
 
@@ -120,13 +131,24 @@ Shows whether your address is on the on-chain Merkle allowlist. If yes, displays
 
 If you're **not allowlisted**, contact the admin to be added. Status updates as the merkle root is rotated.
 
+### `/faucet` — 1-click test USDCx
+
+The fastest way to get cUSDCMock for testing. One button runs the canonical 3-tx ERC-7984 onboarding (mint underlying USDC → approve the wrapper → wrap into encrypted USDCx) sequentially from your connected wallet. Smart skip: if you already approved the wrapper from a prior mint, step 2 is omitted and you only see two wallet popups instead of three.
+
+- Default mint amount: **10,000 USDCx** per click. No rate limit.
+- Live stats panel shows your current underlying balance + wrapper allowance status.
+- After success, the page links the wrap tx on Etherscan and refreshes balances automatically.
+- Step indicator on the button (`1/3 — minting underlying USDC…`, etc.) tells you exactly where you are in the flow.
+
+This page replaces the previous "click through 3 Etherscan write-tx pages" onboarding from the earlier docs. The Etherscan path still works (see Path B in §2 above) but is no longer the recommended option.
+
 ### `/trade` — Open / close perpetual positions
 
 The core flow.
 
 **Opening**:
 - Side: Long (price up = profit) or Short (price down = profit)
-- Market: BTC, ETH, or SOL
+- Market: BTC or ETH (SOL hidden on Sepolia — see TL;DR for why)
 - Size: contract size (e.g., `0.1` ETH)
 - Collateral: cUSDCMock backing the position (e.g., `100`)
 - Leverage: implicit, derived from `size × oracle_price ÷ collateral`. Engine enforces max leverage and reverts on under-collateralized positions (silent-zero pattern).
@@ -156,22 +178,36 @@ The AMM acts as the counterparty for all perp trades.
 - Wait for the bot's `decrypt-relay` watcher to push the cleartext callback (~30–60s on testnet).
 - Your cUSDCMock is credited back to your vault balance.
 
-### `/darkpool` — Encrypted batch orders
+### `/darkpool` — Encrypted orders, two settlement modes
 
-Submit limit orders where size, collateral, and limit price are all encrypted. The keeper bot collects orders into batches, requests a single Gateway decryption to determine which fill at the current oracle price, and settles them atomically through the PerpEngine executor pattern.
+The Darkpool page submits orders whose size, collateral, and price preference are all encrypted. There are **two settlement modes**, selected via the toggle at the top of the form.
 
-**Submit**:
+#### Mode 1 — **Batch vs. pool** (legacy path)
+
+The keeper bot collects orders into batches, requests a single Gateway decryption to determine which fill at the current oracle price, and settles them atomically through the PerpEngine executor pattern.
+
 - Side, market, size, collateral, limit price → encrypt → submit.
 - Order joins the dark queue; nobody (including other traders) sees your limit price.
+- Keeper caps batch size at 10 to stay within Zama's 5M HCU limit per tx.
 
-**Cancel**:
+#### Mode 2 — **P2P pair-match** (Phase 11)
+
+Two users with opposite-side encrypted orders settle directly against each other at the oracle price. The trade is fully encrypted end-to-end; the chain only learns that *some* match happened, not the sizes or whose orders matched.
+
+- Toggle to **P2P pair-match**, fill in size + collateral-per-unit, submit. Order ciphertext goes on-chain via `submitOrderForPairMatch`.
+- The bot's match watcher scans for cross-eligible pairs every 15 s — distinct owners (`PairOrdersSameOwner` reverts), opposite sides, same market, both KYC-allowlisted.
+- On match: bot calls `submitMatchPair`. Engine emits a `MatchProposed` event with three bools batched into a single decrypt request.
+- Decrypt callback `_onMatchDecided` either fills both sides at the oracle price (atomically opening the two perp positions on PerpEngine) or rejects with a guarded reason. Total flow ~30–60 s on Sepolia.
+- One match per tick, 10-block backoff on failed pairs, FIFO queue by `orderId`-sum.
+
+**Cancel** (either mode):
 - Click your order in "My active orders" → click Cancel.
 - Encrypted collateral refunds back to your vault balance.
 
-**Limitations** (intentional, documented):
-- No volume matching (orders fill all-or-nothing at oracle price)
-- No partial fills
-- Keeper caps batch size at 10 to stay within Zama's 5M HCU limit per tx
+**Limitations of P2P mode** (intentional, documented):
+- Self-match rejected pre-encryption (cheap revert via plaintext owner check).
+- Smaller order is fully consumed; larger order has its residual ciphertext re-allowed for cancel/refill.
+- Match price is always the current oracle price, not a midpoint or limit-price match — matches are crossing-by-eligibility, not crossing-by-price-discovery. Future phases may relax this.
 
 ### `/portfolio` — Encrypted state inspector
 
@@ -217,7 +253,7 @@ Visit Etherscan via the contract links table above. Each contract has its source
 - `_onLiquidationDecided` only runs after `FHE.checkSignatures(...)` validates Zama's KMS proof.
 - All `FHE.allow()` calls grant access to the user's own address — no engine ever holds persistent decrypt rights to user data.
 
-For deeper verification, run the test suite: `cd contracts && npm test` (288 tests passing as of commit `006a485`).
+For deeper verification, run the test suite: `cd contracts && npm test` (302 contract tests passing; 347 across all suites including bot, compliance backend, and oracle relayer).
 
 ---
 
@@ -330,7 +366,7 @@ For builders who want to understand the protocol mechanics:
 
 - **Design spec**: `docs/specs/2026-04-24-noirperp-design.md`
 - **FHE primitives reference**: `docs/fhe-primitives.md`
-- **Per-phase implementation plans**: `docs/plans/2026-04-2X-phase-N-*.md` (one per phase, 0–9)
+- **Per-phase implementation plans**: `docs/plans/2026-04-2X-phase-N-*.md` (one per phase, 0–11)
 - **Tier 2 audit pack**: `docs/audit/2026-04-27-*.md` (HCU benchmarks, OZ FHEVM checklist, per-contract sign-off)
 - **Phase tracker**: `PROGRESS.md`
 - **Change history**: `CHANGELOG.md`
@@ -351,7 +387,7 @@ For builders who want to understand the protocol mechanics:
 | **HCU** (Homomorphic Compute Units) | Zama's resource budget. 5M sequential, 20M global per tx. Heavy paths like `requestBatchMatch` at N=10 use ~4.89M. |
 | **cUSDCMock** | Zama's pre-deployed confidential USDC mock on Sepolia (`0x7c5B…3639`). Wraps a regular ERC20 mock into an ERC-7984 confidential balance. |
 | **Async-decrypt callback** | The two-transaction pattern for liquidations / dark-pool matches / async withdraws: tx 1 emits a decrypt request; tx 2 (signed by Zama's KMS, relayed by the bot) carries the cleartext callback. |
-| **Keeper / bot** | Off-chain Node service running 4 watchers (liquidation, trigger, batch, decrypt-relay) that pushes async state forward. |
+| **Keeper / bot** | Off-chain Node service running 5 watchers (liquidation, trigger, batch, **match** (Phase 11), decrypt-relay) that pushes async state forward. |
 | **Relayer (oracle)** | One of 3 EOAs registered in the Oracle. 2-of-3 quorum required to commit a price update. |
 | **Relayer (Zama)** | Distinct from oracle relayers — Zama's off-chain service that signs decryption proofs from the KMS. Confusing naming, sorry. |
 | **Allowlist** | Merkle-tree of KYC-approved addresses. Root stored on-chain (`Compliance.merkleRoot()`); proofs served by `compliance-backend`. |

@@ -14,6 +14,27 @@ solved design decisions; give future agents full context.
 
 ## 2026-05-05
 
+### USER_GUIDE.md updated for Phase 11 + Faucet + Sepolia state
+
+Surgical updates to the user-facing walkthrough; preserves prior structure and prose verbatim where still correct, replaces stale items, adds genuinely new sections.
+
+**Critical accuracy fixes** (the page would otherwise actively mislead users):
+
+- DarkpoolEngine address swapped to v2 (`0x199012e4…0F84`); v1 footnoted as still vault-authorized for cancel paths.
+- SOL/USD removed from "tradeable today" list — no Chainlink AggregatorV3 on Sepolia. TL;DR rewritten to mention SOL is hidden on testnet but supported by design (mainnet path).
+- "The 6 frontend pages" → "The 7 frontend pages" — `/faucet` added.
+- Bot watcher count 4 → **5** (match watcher added in Phase 11).
+- Test count `288` → `302 contract tests passing; 347 across all suites`.
+- "phases 0–9" → "phases 0–11" in the architecture-deep-dive references.
+
+**New content**:
+
+- **`/faucet` page section** under "The 7 frontend pages": describes the 1-click flow, smart-skip on repeat mints, the live stats panel, the step-indicator UX. Notes that this replaces the previous Etherscan-only path.
+- **§2 ("Get test cUSDCMock")** restructured into three paths instead of two: Path A (recommended — `/faucet`), Path B (manual via Etherscan, demoted), Path C (admin pre-mint, unchanged). Reduces median onboarding time from ~3 min to ~30 sec.
+- **`/darkpool` section** expanded to describe **both settlement modes**. Mode 1 (batch vs. pool — legacy path) preserved; new Mode 2 (P2P pair-match — Phase 11) documents the toggle, `submitOrderForPairMatch`, the bot's match watcher, distinct-owner / opposite-side / same-market filtering, the 3-bool batched decrypt, the FIFO + 10-block-backoff scheduling, and the limitation envelope (no price discovery; matches at oracle price).
+
+**Files**: `docs/USER_GUIDE.md` (370 → 406 lines).
+
 ### README rewrite — 173 → 444 lines, full structure for judges + reviewers
 
 Triggered by the GitHub publish: the previous README was a phase-9 snapshot and didn't reflect Phase 11 (P2P pair-matching), the v2 DarkpoolEngine redeploy, or the new Faucet page. It also lacked the structure a hackathon-judge or external reviewer needs to triage the project quickly.
