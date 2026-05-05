@@ -14,6 +14,36 @@ solved design decisions; give future agents full context.
 
 ## 2026-05-05
 
+### README rewrite — 173 → 444 lines, full structure for judges + reviewers
+
+Triggered by the GitHub publish: the previous README was a phase-9 snapshot and didn't reflect Phase 11 (P2P pair-matching), the v2 DarkpoolEngine redeploy, or the new Faucet page. It also lacked the structure a hackathon-judge or external reviewer needs to triage the project quickly.
+
+**New sections** (14 total, with clickable table of contents):
+
+1. **Why this exists** — positions NoirPerp against GMX / dYdX / Hyperliquid (transparent-by-design) and centralized-exchange dark pools (operator-trust-based). Articulates the FHE sweet spot.
+2. **What's encrypted vs. what's public** — side-by-side table. The privacy claim crystallized into one glanceable artifact.
+3. **Features** — 6 numbered (Trade, AMM, Limit, Darkpool, Compliance, Faucet) — each with the on-chain mechanism described concretely (e.g., Darkpool's 3-bool batched decrypt, FIFO queue, 10-block backoff).
+4. **Architecture** — ASCII diagram + layered Vault + Engines + Services explanation + the 2-tx async-decrypt pattern (sync request → bot relays Zama signed callback). Names the canonical FHEVM idiom and why the bot exists.
+5. **Threat model** — explicit trust set (Zama KMS, oracle relayers, compliance backend, bot liveness) vs. non-trust set (engines, admin, other users) + open issues (testnet posture, single-bot deploy, MEV anonymity-set non-claim).
+6. **For judges / reviewers** — 5min / 20min / 1hr paths into the codebase.
+
+**Updated for accuracy**:
+
+- DarkpoolEngine address now points at Phase 11 v2 (`0x199012e4…0F84`); v1 footnoted as still vault-authorized for cancel paths.
+- Test counts unified at 347 (302 contracts + 25 bot + 14 compliance + 6 oracle-relayer). Was inconsistent (327 vs 347) in the first pass — fixed.
+- Phase status table includes Phase 11 + reflects redeploy timestamp.
+- Quick-start "I want to use it" path includes the new `/faucet` step (was missing because the page didn't exist).
+- Repo layout includes `bot/` (was omitted) and the new `Faucet.tsx` + `deploy-sepolia-darkpool-v2.ts`.
+
+**Stylistic**:
+
+- 5 shields.io badges (license / FHEVM version / network / tests / audit).
+- ASCII architecture diagram instead of just prose.
+- Tier 2 audit summary kept; added Phase 11 Tier 1 audit results (both reviewers GREEN).
+- Acknowledgments section (Zama, OZ Confidential Contracts, RainbowKit, wagmi, prior-art DEXes).
+
+**Files**: `README.md` (full rewrite from disk version, not regenerated from a template — preserves prior structural pieces that were correct).
+
 ### Frontend Faucet page — 1-click USDCx onboarding for judges + new users
 
 Adds `/faucet` route and nav entry. Removes the "judge sends you their address, you manually mint from admin" friction by giving anyone with a connected wallet a one-button path to test USDCx.
