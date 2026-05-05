@@ -17,6 +17,17 @@ export const ERC7984_ABI = [
   "function setOperator(address operator, uint48 until) external",
   "function isOperator(address holder, address operator) view returns (bool)",
   "function mintPlaintext(address to, uint64 amount) external",
+  "function wrap(address to, uint256 amount) external",
+] as const;
+
+// Underlying public ERC20 mock that backs Zama's cUSDCMock on Sepolia.
+// Open mint, 6 decimals. Used only by the Faucet page.
+export const UNDERLYING_USDC_ABI = [
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function mint(address to, uint256 amount) external",
+  "function approve(address spender, uint256 amount) external returns (bool)",
 ] as const;
 
 export const VAULT_ABI = [

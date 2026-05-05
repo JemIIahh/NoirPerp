@@ -12,7 +12,7 @@ import { useDeployment } from "../hooks/useDeployment";
 import { useEncryptInput } from "../hooks/useEncrypt";
 import { useComplianceProof } from "../hooks/useCompliance";
 import { useDarkOrders } from "../hooks/useDarkOrders";
-import { MARKETS, marketById } from "../lib/markets";
+import { TRADEABLE_MARKETS, marketById } from "../lib/markets";
 import { DARK_ABI } from "../lib/abis";
 
 const DARK = DARK_ABI;
@@ -184,7 +184,7 @@ function Inner() {
 
               <Field label="Market">
                 <Select value={marketId} onChange={(e) => setMarketId(Number(e.target.value))}>
-                  {MARKETS.map((m) => (
+                  {TRADEABLE_MARKETS.map((m) => (
                     <option key={m.id} value={m.id}>{m.symbol} / USD</option>
                   ))}
                 </Select>

@@ -10,13 +10,15 @@
     "PerpEngine": "0x3eE74fd082078B6aEEE3aA082606b12332Fd2678",
     "AMMEngine": "0xE8B4fa802B7169a8c4972DeA2C6fc1503e3E2B99",
     "LimitEngine": "0xdd4Dce185C7fb44ad60744ebb65951580EA8FE79",
-    "DarkpoolEngine": "0x2031EF7D423bfF2FCa89C335919b11421317bD3d"
+    "DarkpoolEngine": "0x199012e4A7Dd6D7d6B2C4bd49B31Cc9b5Fe80F84"
   },
   "relayers": [
-    "0xaE7dc41284B3fB4E20fb4D99b6ae0ae9b1457c91",
-    "0x9FC17e8Dc575caD212945F0d4d451693878d34dC",
-    "0x0994E7B8cd8314110Da09173421901130e3090d2"
+    "0xdED4F630b4109FF3e8420583c9E461D169785B73",
+    "0xFB40b5688F0a378F7251B7FD9C8a79efEa8BcC4b",
+    "0xB86f43187572B879A8bbC94cBc40326129439154"
   ],
   "admin": "0x87E69cA0D5b843e5f1aca9fF40c8b556665c6D67",
-  "explorer": "https://sepolia.etherscan.io"
+  "explorer": "https://sepolia.etherscan.io",
+  "previousDarkpoolEngine": "0x2031EF7D423bfF2FCa89C335919b11421317bD3d",
+  "darkpoolV2DeployedAt": "2026-05-04T18:00:49.392Z"
 }

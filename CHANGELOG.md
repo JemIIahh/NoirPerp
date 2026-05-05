@@ -12,6 +12,97 @@ solved design decisions; give future agents full context.
 
 ---
 
+## 2026-05-05
+
+### Frontend Faucet page — 1-click USDCx onboarding for judges + new users
+
+Adds `/faucet` route and nav entry. Removes the "judge sends you their address, you manually mint from admin" friction by giving anyone with a connected wallet a one-button path to test USDCx.
+
+**Why this exists**: USDCx is an ERC-7984 confidential wrapper around a public ERC20 mock (Zama's `cUSDCMock` at `0x7c5BF43B…3639`). Confidential balances must be backed 1:1 by underlying for supply integrity, so getting USDCx is necessarily a 3-tx flow (`mint underlying` → `approve(cUSDCMock)` → `wrap`). The on-chain flow can't be collapsed without changing the privacy protocol — but the *UX* can. Pattern mirrors BlindPay's plain-ERC20 faucet, adapted for our extra wrap step. Without this, the documented USER_GUIDE Path A required judges to click through 3 separate Etherscan write-tx pages — high friction, easy to mess up the amount/decimals.
+
+**What's there**:
+
+- One button: "Mint 10,000 USDCx". Runs the 3 txs sequentially under the hood, awaiting receipts between each so the wallet UX is sequential not racing.
+- Smart skip: if `allowance(user, cUSDCMock) >= amount` already, step 2 (approve) is skipped — saves a tx on repeat mints.
+- Step indicator on the button (`1/3 — minting underlying USDC…` etc.).
+- Live stats: user's underlying USDC balance + wrapper allowance status. Both refetch on 10s interval.
+- Etherscan link to the wrap tx after success.
+- "How this works" panel explains the 3-step flow + the ERC-7984 invariant for anyone curious.
+
+**Files**: `frontend/src/pages/Faucet.tsx` (new), `frontend/src/App.tsx` (`/faucet` route), `frontend/src/components/Header.tsx` (nav entry), `frontend/src/lib/abis.ts` (added `wrap()` to `ERC7984_ABI`, new `UNDERLYING_USDC_ABI`). `npx tsc --noEmit` clean.
+
+**Not done** (deferred to Phase 10): self-serve allowlist endpoint. Judges still need to be added to `compliance-backend/data/allowlist.json` manually via `POST /admin/add` until that's built.
+
+---
+
+## 2026-05-04
+
+### Phase 11 — DarkpoolEngine v2 redeployed on Sepolia + bot first-time Sepolia config
+
+Phase 11 (P2P pair-matching) is now live end-to-end on Sepolia. Surgical redeploy of the DarkpoolEngine only — every other contract (Vault, Perp, AMM, Limit, Oracle, Compliance) is unchanged and was not touched. Etherscan-verified.
+
+**On-chain changes**:
+
+- New `DarkpoolEngine` deployed at `0x199012e4A7Dd6D7d6B2C4bd49B31Cc9b5Fe80F84` (constructor: `vault=0x80c9EDF6…, admin=0x87E69c…`).
+- 5 admin wiring txs: `setOracle`, `setPerp`, `setCompliance`, `vault.registerEngine(newDark)`, `perp.setExecutor(newDark, true)`. All confirmed on-chain — verified by reading `dark.{vault,admin,oracle,perp,compliance}`, `vault.authorizedEngines(newDark) == true`, `perp.authorizedExecutors(newDark) == true`.
+- Old `DarkpoolEngine` (`0x2031EF…bD3d`) intentionally left registered on the vault and authorized as a Perp executor. Reason: anyone with active orders on the old contract can still cancel/refund. Verified at the time of redeploy that `oldDark.nextOrderId() == 0` — no orders ever existed on the old contract — so this dual-authorization is purely safety hygiene with zero risk of orphaned funds.
+- Etherscan-verified: <https://sepolia.etherscan.io/address/0x199012e4A7Dd6D7d6B2C4bd49B31Cc9b5Fe80F84#code>.
+
+**Bot first-time Sepolia configuration** — three independent issues surfaced when starting the match-watcher bot against Sepolia for the first time. The bot had only ever run against local Hardhat in Phase 11 tests:
+
+1. **`START_BLOCK` env var added.** `bot/src/index.ts:131` reads `process.env.START_BLOCK ?? 0`. Default of `0` causes publicnode RPC to reject `eth_getLogs` with `exceed maximum block range: 50000`. Set `START_BLOCK=10789927` (a few blocks before the v2 deploy block — pre-redeploy state is irrelevant, no orders ever existed on the old DarkpoolEngine). New comment in `bot/.env` explains.
+2. **Relayer-SDK import path corrected.** `bot/src/index.ts` was dynamic-importing `@zama-fhe/relayer-sdk` (root export). At `0.4.x` the package's `exports` map only defines `./web`, `./bundle`, `./node`, `./package.json` — root resolves to `undefined`. Changed to `@zama-fhe/relayer-sdk/node` (Node entry — symmetric with the frontend's `@zama-fhe/relayer-sdk/web`).
+3. **`createInstance` config completed.** Was passing only `{chainId, networkUrl}` — SDK requires `relayerUrl` (and other KMS / coprocessor preset addresses). Switched to spread the SDK's `SepoliaConfig` preset and override only `network` with our RPC URL. Mirrors the working pattern in `frontend/src/lib/relayer.ts:24-29`.
+4. **Resilience to transient Sepolia RPC failures.** The first three fixes got the bot to start, but it died twice within ~30s of "bot up" with two distinct unhandled rejections: `getaddrinfo ENOTFOUND ethereum-sepolia-rpc.publicnode.com` (DNS hiccup) and `Error: request timeout (code=TIMEOUT)` (HTTPS roundtrip exceeded default timeout). Both are routine on public Sepolia RPCs. Per-watcher handlers already wrap event callbacks in `.catch(() => {})`, but rejections from inside `subscribe*` / provider polling / WS reconnect happen outside that boundary and bubble to the top-level. Added `process.on("unhandledRejection")` + `process.on("uncaughtException")` handlers in `bot/src/index.ts` that log via `pino` and continue. Bot then self-heals on the next tick (15s). Aligns with CLAUDE.md "validate at system boundaries (external APIs)" — Sepolia RPC qualifies. With the handlers in place the bot stays up across DNS / TLS hiccups instead of crashing.
+
+After all four fixes the bot starts cleanly, completes replay (0 of every category — clean state on the new DarkpoolEngine), enters the 15s tick loop subscribing to events on the new contract, and survives transient RPC failures.
+
+**Repo state changes**:
+
+- `contracts/deployments/sepolia.json`: `contracts.DarkpoolEngine` swapped to new address; old archived under `previousDarkpoolEngine`; `darkpoolV2DeployedAt` ISO timestamp added; `relayers` array also resynced to current on-chain slots (was stale from initial deploy — see relayer rotation entry below).
+- `bot/.env`: created from scratch (file did not exist; `bot/.env.example` only had local Hardhat config). Sepolia RPC + WS + new disposable bot wallet (`0x2bEE9791…05711`, fresh EOA, 0.05 SEP funded, only role is calling `submitMatchPair` — permissionless on the contract per `DarkpoolEngine.sol:483`).
+- `bot/src/index.ts`: 2-line edit (relayer-sdk import path + createInstance config). Rebuilt to `bot/dist/index.js`.
+
+**Files**: `contracts/scripts/deploy-sepolia-darkpool-v2.ts` (already on disk — used unchanged), `contracts/deployments/sepolia.json`, `bot/src/index.ts`, `bot/.env` (new, gitignored), `bot/dist/*.js` (rebuild artifacts).
+
+### Frontend — SOL hidden from selectors / ticker (Sepolia limitation)
+
+Hide marketId=3 (SOL/USD) from market selectors and the ticker on Sepolia. Cause: Chainlink does not deploy a SOL/USD AggregatorV3 on Sepolia, so the oracle-relayer falls back to synthetic `mockPrice` for SOL. Combined with a stale `PendingStale` from an old-relayer pending submission orphaned by today's relayer-B rotation, SOL on Sepolia is effectively non-tradeable. Documented as a Sepolia-specific limitation rather than a NoirPerp design issue.
+
+**Pattern** — additive, non-breaking:
+
+- `Market` type gains `disabled?: boolean`. SOL marked `disabled: true`.
+- New `TRADEABLE_MARKETS` export = `MARKETS.filter(m => !m.disabled)`. Used by selector dropdowns, the price-fetch `useReadContracts` loop, and the `MarketTicker` component.
+- `MARKETS` (full list) still exists. `marketById(3)` still resolves — historical positions or pending orders that reference SOL continue to render correctly.
+
+**Why this pattern**: zero risk of orphaning historical state; zero ABI changes; no contract calls touched; trivially reversible (delete one flag) when a SOL feed becomes available — either Chainlink eventually shipping one, or wiring our own `AggregatorV3`-compatible mock per the alternatives written into the Phase 11 retro doc-trail.
+
+**Files**: `frontend/src/lib/markets.ts`, `frontend/src/pages/Trade.tsx`, `frontend/src/pages/Darkpool.tsx`. `npx tsc --noEmit` clean.
+
+### Sepolia oracle relayer rotation — slots 1 + 2 replaced
+
+Rotated Oracle relayer slots 1 (B) and 2 (C) to new EOAs via two `Oracle.rotateRelayer` admin txs from `0x87E69c…6D67`. Slot 0 (A) unchanged.
+
+**Why slot 1**: original relayer B (`0x102294…F62B`) had run out of Sepolia ETH and was blocking oracle ticks. Funding it would have worked, but the user provided a fresh funded EOA, so we rotated rather than top-up.
+
+**Why slot 2**: ended the Phase 7 documented "C offline" deviation. Original C (`0x0994E7…90d2`) was a placeholder address with no private key on this laptop. New C (`0xB86f43…439154`) is a real disposable EOA with 0.05 SEP. Quorum is now genuinely 2-of-3.
+
+**On-chain state after**:
+
+| Slot | Old | New |
+|---|---|---|
+| 0 (A) | `0xdED4F6…5B73` | unchanged |
+| 1 (B) | `0x102294…F62B` | `0xFB40b5…BcC4b` |
+| 2 (C) | `0x0994E7…90d2` (placeholder) | `0xB86f43…439154` (real) |
+
+**Important caveat — known gap**: the relayer service (`oracle-relayer/src/index.ts:18-19`) signs from A + B per tick only. Slot 2 is on-chain authoritative but not yet wired into the per-tick loop; it serves as failover (manual env swap if A or B dies) until a future refactor adds dynamic 2-of-3 selection. Documented here so a future agent doesn't think the bot suddenly stopped using all three.
+
+**Side effect — stuck SOL `PendingStale`**: rotating slot 1 orphaned a pending SOL submission set by old-B at `1777502755`. Same-relayer reset path is unreachable (old-B no longer authorized); different-relayer commit reverts on `block.timestamp > pendingTimestamp + stalenessSeconds`. This is the root cause of the SOL hide above. Fix path documented for later: temporarily rotate old-B back, fund it, have it submit (matches `pendingRelayer`, takes the same-relayer reset branch unconditionally — no staleness check), rotate new-B back. ~5 admin txs. Not done tonight because SOL has no real Chainlink feed on Sepolia anyway.
+
+**Files**: `contracts/.env` (B + C addresses + privkeys updated, comments rewritten), `oracle-relayer/.env` (B privkey updated, C privkey added with note that the service doesn't yet sign from C), `contracts/deployments/sepolia.json` (`relayers` array resynced — was originally stale, listed pre-rotation initial-deploy addresses).
+
+---
+
 ## 2026-04-28
 
 ### Frontend design-system extensions — load-bearing for Phase 11 UI

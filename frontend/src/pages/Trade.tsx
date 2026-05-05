@@ -14,7 +14,7 @@ import { useEncryptInput } from "../hooks/useEncrypt";
 import { useComplianceProof } from "../hooks/useCompliance";
 import { usePositions } from "../hooks/usePositions";
 import { EncryptedValue } from "../components/EncryptedValue";
-import { MARKETS, marketById } from "../lib/markets";
+import { TRADEABLE_MARKETS, marketById } from "../lib/markets";
 import { PERP_ABI, ORACLE_ABI } from "../lib/abis";
 
 const PERP = parseAbi(PERP_ABI);
@@ -47,7 +47,7 @@ function Inner() {
   });
 
   const { data: allPrices } = useReadContracts({
-    contracts: MARKETS.map((m) => ({
+    contracts: TRADEABLE_MARKETS.map((m) => ({
       address: deployment?.contracts.Oracle,
       abi: ORACLE,
       functionName: "getPrice" as const,
@@ -129,7 +129,7 @@ function Inner() {
 
               <Field label="Market">
                 <Select value={marketId} onChange={(e) => setMarketId(Number(e.target.value))}>
-                  {MARKETS.map((m) => (
+                  {TRADEABLE_MARKETS.map((m) => (
                     <option key={m.id} value={m.id}>{m.symbol} / USD perpetual</option>
                   ))}
                 </Select>
@@ -425,7 +425,7 @@ function MarketTicker({
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 animate-fade-up [animation-delay:60ms]">
-      {MARKETS.map((m, idx) => {
+      {TRADEABLE_MARKETS.map((m, idx) => {
         const r = prices?.[idx];
         const tuple = r?.status === "success" ? (r.result as PriceTuple) : undefined;
         const isSelected = selected === m.id;

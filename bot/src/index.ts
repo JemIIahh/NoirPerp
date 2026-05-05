@@ -18,10 +18,12 @@ async function makePublicDecrypt(network: string): Promise<PublicDecryptFn> {
     return async () => ({ abiEncodedClearValues: "0x", decryptionProof: "0x" });
   }
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const { createInstance } = await (Function('return import("@zama-fhe/relayer-sdk")')() as Promise<any>);
-  const instance = await createInstance({
-    chainId: 11155111,
-    networkUrl: process.env.RPC_URL!,
+  const sdk = await (Function('return import("@zama-fhe/relayer-sdk/node")')() as Promise<any>);
+  // SepoliaConfig provides the preset KMS / coprocessor / relayer URLs.
+  // We override `network` to point at our chosen RPC.
+  const instance = await sdk.createInstance({
+    ...sdk.SepoliaConfig,
+    network: process.env.RPC_URL!,
   });
   return async (handles) => {
     const result = await (instance as any).publicDecrypt(handles);
@@ -178,6 +180,21 @@ async function main(): Promise<void> {
 
   logger.info({ tick: cfg.tickIntervalMs }, "bot up");
 }
+
+// Resilience to transient Sepolia RPC failures (DNS lookup hiccups,
+// HTTPS timeouts, WS reconnect glitches). Without these guards a single
+// failed RPC call inside any subscribed event handler bubbles up as an
+// unhandled rejection and kills the whole bot. Watchers themselves
+// already wrap their per-event handlers in `.catch(() => {})`, but
+// rejections from within `subscribeMatch` / provider polling / ws
+// reconnect happen outside that boundary. Log and keep running — bot
+// recovers automatically on the next tick (15s).
+process.on("unhandledRejection", (reason: unknown) => {
+  logger.error({ reason: (reason as Error)?.message ?? String(reason) }, "unhandled rejection — continuing");
+});
+process.on("uncaughtException", (err: Error) => {
+  logger.error({ err: err?.message }, "uncaught exception — continuing");
+});
 
 main().catch((err) => {
   logger.fatal({ err: err?.message }, "fatal");

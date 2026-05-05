@@ -7,6 +7,7 @@ import Liquidity from "./pages/Liquidity";
 import Darkpool from "./pages/Darkpool";
 import Portfolio from "./pages/Portfolio";
 import Compliance from "./pages/Compliance";
+import Faucet from "./pages/Faucet";
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
             <Route path="darkpool" element={<Darkpool />} />
             <Route path="portfolio" element={<Portfolio />} />
             <Route path="compliance" element={<Compliance />} />
+            <Route path="faucet" element={<Faucet />} />
           </Route>
         </Routes>
       </BrowserRouter>
