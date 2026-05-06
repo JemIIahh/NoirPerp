@@ -7,48 +7,50 @@ export const MAX_BATCH_SIZE = 10; // per Phase 6 HCU audit — 5M sequential cap
 export type DarkOrderRef = { orderId: bigint; marketId: number };
 
 /**
- * Subscribe to DarkpoolEngine events that maintain the tracked dark-order set.
+ * Poll DarkpoolEngine events that maintain the legacy (batch-vs-pool) dark
+ * order set. HTTP-based replacement for the earlier WS subscription.
  *
- * - darkRO "OrderSubmitted" → add (orderId, marketId) ref to tracked
- * - darkRO "BatchSettled"   → remove all refs whose orderId appears in the event's orderIds array
+ * - darkRO "OrderSubmitted" → add (orderId, marketId)
+ * - darkRO "BatchSettled"   → remove all refs whose orderId is in the settled list
  * - darkRO "OrderCancelled" → remove ref by orderId
- *
- * Returns an unsubscribe function that removes all listeners.
  */
-export function subscribeBatch(
+export async function pollBatchEvents(
   darkRO: Contract,
+  fromBlock: number,
+  toBlock: number,
   tracked: TrackedSet<DarkOrderRef>,
   logger: Logger,
-): () => void {
-  const onSubmitted = (orderId: bigint, _owner: string, marketId: number) => {
-    tracked.add({ orderId, marketId: Number(marketId) });
-    logger.info({ orderId: orderId.toString(), marketId: Number(marketId) }, "tracked dark order");
-  };
+): Promise<void> {
+  const [submitted, settled, cancelled] = await Promise.all([
+    darkRO.queryFilter("OrderSubmitted", fromBlock, toBlock),
+    darkRO.queryFilter("BatchSettled", fromBlock, toBlock),
+    darkRO.queryFilter("OrderCancelled", fromBlock, toBlock),
+  ]);
 
-  const onSettled = (_requestId: bigint, orderIds: bigint[], _shouldFires: bigint[]) => {
+  for (const ev of submitted) {
+    const a = (ev as any).args;
+    const orderId = a.orderId as bigint;
+    // De-dupe across re-polled ranges: object T compares by reference, so
+    // skip if any tracked entry already has this orderId.
+    if (tracked.list().some((r) => r.orderId === orderId)) continue;
+    tracked.add({ orderId, marketId: Number(a.marketId) });
+    logger.info({ orderId: orderId.toString(), marketId: Number(a.marketId) }, "tracked dark order");
+  }
+  for (const ev of settled) {
+    const orderIds = (ev as any).args.orderIds as bigint[];
     for (const oid of orderIds) {
       for (const ref of tracked.list()) {
         if (ref.orderId === oid) tracked.remove(ref);
       }
     }
-  };
-
-  const onCancelled = (orderId: bigint, _owner: string) => {
+  }
+  for (const ev of cancelled) {
+    const oid = (ev as any).args.orderId as bigint;
     for (const ref of tracked.list()) {
-      if (ref.orderId === orderId) tracked.remove(ref);
+      if (ref.orderId === oid) tracked.remove(ref);
     }
-    logger.info({ orderId: orderId.toString() }, "untracked: cancelled");
-  };
-
-  darkRO.on("OrderSubmitted", onSubmitted);
-  darkRO.on("BatchSettled", onSettled);
-  darkRO.on("OrderCancelled", onCancelled);
-
-  return () => {
-    darkRO.off("OrderSubmitted", onSubmitted);
-    darkRO.off("BatchSettled", onSettled);
-    darkRO.off("OrderCancelled", onCancelled);
-  };
+    logger.info({ orderId: oid.toString() }, "untracked: cancelled");
+  }
 }
 
 /**

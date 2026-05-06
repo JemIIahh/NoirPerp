@@ -3,52 +3,50 @@ import type { Logger } from "pino";
 import type { TrackedSet } from "../state.js";
 
 /**
- * Subscribe to on-chain events that maintain the tracked limit-order set.
+ * Poll LimitEngine events that maintain the tracked limit-order set.
+ * HTTP-based replacement for the earlier WS subscription.
  *
- * - limitRO "OrderPlaced"    → add orderId to tracked (order is live)
- * - limitRO "Triggered"      → remove orderId from tracked (order executed)
- * - limitRO "TriggerNotMet"  → keep in tracked (order survived this check;
- *                               bot keeps probing until triggered or cancelled)
- * - limitRO "OrderCancelled" → remove orderId from tracked (order is gone)
- *
- * Returns an unsubscribe function that removes all listeners.
+ * - limitRO "OrderPlaced"    → add orderId
+ * - limitRO "Triggered"      → remove orderId
+ * - limitRO "TriggerNotMet"  → log only (order survived; bot keeps probing)
+ * - limitRO "OrderCancelled" → remove orderId
  */
-export function subscribeTrigger(
+export async function pollTriggerEvents(
   limitRO: Contract,
+  fromBlock: number,
+  toBlock: number,
   tracked: TrackedSet<bigint>,
   logger: Logger,
-): () => void {
-  const onOrderPlaced = (orderId: bigint, owner: string, orderType: number, marketId: number) => {
-    logger.info({ orderId: orderId.toString(), owner, orderType, marketId }, "OrderPlaced — tracking");
+): Promise<void> {
+  const [placed, triggered, notMet, cancelled] = await Promise.all([
+    limitRO.queryFilter("OrderPlaced", fromBlock, toBlock),
+    limitRO.queryFilter("Triggered", fromBlock, toBlock),
+    limitRO.queryFilter("TriggerNotMet", fromBlock, toBlock),
+    limitRO.queryFilter("OrderCancelled", fromBlock, toBlock),
+  ]);
+
+  for (const ev of placed) {
+    const a = (ev as any).args;
+    const orderId = a.orderId as bigint;
     tracked.add(orderId);
-  };
-
-  const onTriggered = (orderId: bigint, user: string) => {
-    logger.info({ orderId: orderId.toString(), user }, "Triggered — removing from tracked");
+    logger.info(
+      { orderId: orderId.toString(), owner: a.owner, orderType: Number(a.orderType), marketId: Number(a.marketId) },
+      "OrderPlaced — tracking",
+    );
+  }
+  for (const ev of triggered) {
+    const orderId = (ev as any).args.orderId as bigint;
     tracked.remove(orderId);
-  };
-
-  const onTriggerNotMet = (orderId: bigint) => {
-    // Order survived this check — keep it tracked, bot keeps probing
-    logger.info({ orderId: orderId.toString() }, "kept");
-  };
-
-  const onOrderCancelled = (orderId: bigint, owner: string) => {
-    logger.info({ orderId: orderId.toString(), owner }, "OrderCancelled — removing from tracked");
+    logger.info({ orderId: orderId.toString(), user: (ev as any).args.user }, "Triggered — removing from tracked");
+  }
+  for (const ev of notMet) {
+    logger.info({ orderId: ((ev as any).args.orderId as bigint).toString() }, "kept");
+  }
+  for (const ev of cancelled) {
+    const orderId = (ev as any).args.orderId as bigint;
     tracked.remove(orderId);
-  };
-
-  limitRO.on("OrderPlaced", onOrderPlaced);
-  limitRO.on("Triggered", onTriggered);
-  limitRO.on("TriggerNotMet", onTriggerNotMet);
-  limitRO.on("OrderCancelled", onOrderCancelled);
-
-  return () => {
-    limitRO.off("OrderPlaced", onOrderPlaced);
-    limitRO.off("Triggered", onTriggered);
-    limitRO.off("TriggerNotMet", onTriggerNotMet);
-    limitRO.off("OrderCancelled", onOrderCancelled);
-  };
+    logger.info({ orderId: orderId.toString(), owner: (ev as any).args.owner }, "OrderCancelled — removing from tracked");
+  }
 }
 
 /**

@@ -40,27 +40,44 @@ async function currentBlock(c: Contract): Promise<bigint> {
   return BigInt(n);
 }
 
-export function subscribeMatch(
+/**
+ * Poll DarkpoolEngine events that maintain the pair-eligible order set.
+ * HTTP-based replacement for the earlier WS subscription. The poll uses
+ * the event's own block number for back-off bookkeeping (no extra RPC
+ * call), avoiding the off-by-tick drift the WS path had.
+ */
+export async function pollMatchEvents(
   darkRO: Contract,
+  fromBlock: number,
+  toBlock: number,
   tracked: TrackedSet<PairOrderRef>,
   recentlyFailed: RecentlyFailed,
   logger: Logger,
-): () => void {
-  const onSubmittedForPair = (
-    orderId: bigint, owner: string, marketId: number, isLong: boolean,
-  ) => {
+): Promise<void> {
+  const [submitted, closed, cancelled, rejected, aborted] = await Promise.all([
+    darkRO.queryFilter("OrderSubmittedForPair", fromBlock, toBlock),
+    darkRO.queryFilter("OrderClosed", fromBlock, toBlock),
+    darkRO.queryFilter("OrderCancelled", fromBlock, toBlock),
+    darkRO.queryFilter("MatchRejected", fromBlock, toBlock),
+    darkRO.queryFilter("MatchAborted", fromBlock, toBlock),
+  ]);
+
+  for (const ev of submitted) {
+    const a = (ev as any).args;
+    const orderId = a.orderId as bigint;
+    // De-dupe — see batch.ts for the same pattern (object T compares by ref).
+    if (tracked.list().some((r) => r.orderId === orderId)) continue;
     tracked.add({
       orderId,
-      owner,
-      marketId: Number(marketId),
-      isLong: Boolean(isLong),
+      owner: a.owner as string,
+      marketId: Number(a.marketId),
+      isLong: Boolean(a.isLong),
     });
     logger.info(
-      { orderId: orderId.toString(), marketId: Number(marketId), isLong: Boolean(isLong) },
+      { orderId: orderId.toString(), marketId: Number(a.marketId), isLong: Boolean(a.isLong) },
       "tracked pair-eligible dark order",
     );
-  };
-
+  }
   const removeById = (oid: bigint, reason: string) => {
     for (const ref of tracked.list()) {
       if (ref.orderId === oid) {
@@ -69,48 +86,28 @@ export function subscribeMatch(
       }
     }
   };
-
-  const onClosed = (orderId: bigint, _reason: string) => removeById(orderId, "closed");
-  const onCancelled = (orderId: bigint, _owner: string) => removeById(orderId, "cancelled");
-
-  const onRejected = async (requestId: bigint, buyId: bigint, sellId: bigint) => {
-    const block = await currentBlock(darkRO);
-    recentlyFailed.set(pairKey(buyId, sellId), block);
+  for (const ev of closed) removeById((ev as any).args.orderId as bigint, "closed");
+  for (const ev of cancelled) removeById((ev as any).args.orderId as bigint, "cancelled");
+  for (const ev of rejected) {
+    const a = (ev as any).args;
+    recentlyFailed.set(pairKey(a.buyId as bigint, a.sellId as bigint), BigInt(ev.blockNumber));
     logger.info(
-      { requestId: requestId.toString(), buyId: buyId.toString(), sellId: sellId.toString() },
+      { requestId: (a.requestId as bigint).toString(), buyId: (a.buyId as bigint).toString(), sellId: (a.sellId as bigint).toString() },
       "pair rejected — back-off recorded",
     );
-  };
-
-  const onAborted = (
-    requestId: bigint, buyId: bigint, sellId: bigint, reason: string,
-  ) => {
-    // The cancelled side was already removed via OrderCancelled, so the
-    // pair can't reform — no need to record back-off. Just log for visibility.
+  }
+  for (const ev of aborted) {
+    const a = (ev as any).args;
     logger.info(
       {
-        requestId: requestId.toString(),
-        buyId: buyId.toString(),
-        sellId: sellId.toString(),
-        reason,
+        requestId: (a.requestId as bigint).toString(),
+        buyId: (a.buyId as bigint).toString(),
+        sellId: (a.sellId as bigint).toString(),
+        reason: a.reason,
       },
       "pair aborted",
     );
-  };
-
-  darkRO.on("OrderSubmittedForPair", onSubmittedForPair);
-  darkRO.on("OrderClosed", onClosed);
-  darkRO.on("OrderCancelled", onCancelled);
-  darkRO.on("MatchRejected", onRejected);
-  darkRO.on("MatchAborted", onAborted);
-
-  return () => {
-    darkRO.off("OrderSubmittedForPair", onSubmittedForPair);
-    darkRO.off("OrderClosed", onClosed);
-    darkRO.off("OrderCancelled", onCancelled);
-    darkRO.off("MatchRejected", onRejected);
-    darkRO.off("MatchAborted", onAborted);
-  };
+  }
 }
 
 /**

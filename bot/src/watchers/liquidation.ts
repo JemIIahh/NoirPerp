@@ -3,45 +3,54 @@ import type { Logger } from "pino";
 import type { TrackedSet } from "../state.js";
 
 /**
- * Subscribe to on-chain events that maintain the tracked liquidation set.
+ * Poll on-chain events that maintain the tracked liquidation set, using
+ * HTTP `queryFilter` against the (fromBlock, toBlock] range. Replaces the
+ * earlier WS-based `subscribeLiquidation`, which suffered silent connection
+ * drops on publicnode. TrackedSet is idempotent on bigint primitives, so
+ * if the same range is re-polled (e.g. after a transient failure), state
+ * stays correct.
  *
- * - vaultRO "PositionOpened" → add positionId to tracked (position is live)
- * - perpRO  "Liquidated"     → remove positionId from tracked (position is gone)
- * - perpRO  "LiquidationChecked" → keep in tracked (position survived the check;
- *                                   bot continues probing until actually liquidated)
- *
- * Returns an unsubscribe function that removes all listeners.
+ * - vaultRO "PositionOpened" → add positionId
+ * - vaultRO "PositionClosed" → remove positionId
+ * - perpRO  "Liquidated"     → remove positionId
+ * - perpRO  "LiquidationChecked" → log only (position survived; bot keeps probing)
  */
-export function subscribeLiquidation(
+export async function pollLiquidationEvents(
   vaultRO: Contract,
   perpRO: Contract,
+  fromBlock: number,
+  toBlock: number,
   tracked: TrackedSet<bigint>,
   logger: Logger,
-): () => void {
-  const onPositionOpened = (positionId: bigint, owner: string, marketId: number) => {
-    logger.info({ positionId: positionId.toString(), owner, marketId }, "PositionOpened — tracking");
+): Promise<void> {
+  const [opened, closed, liquidated, checked] = await Promise.all([
+    vaultRO.queryFilter("PositionOpened", fromBlock, toBlock),
+    vaultRO.queryFilter("PositionClosed", fromBlock, toBlock),
+    perpRO.queryFilter("Liquidated", fromBlock, toBlock),
+    perpRO.queryFilter("LiquidationChecked", fromBlock, toBlock),
+  ]);
+
+  for (const ev of opened) {
+    const a = (ev as any).args;
+    const positionId = a.positionId as bigint;
     tracked.add(positionId);
-  };
-
-  const onLiquidated = (positionId: bigint, keeper: string) => {
-    logger.info({ positionId: positionId.toString(), keeper }, "Liquidated — removing from tracked");
+    logger.info(
+      { positionId: positionId.toString(), owner: a.owner, marketId: Number(a.marketId) },
+      "PositionOpened — tracking",
+    );
+  }
+  for (const ev of closed) {
+    const positionId = (ev as any).args.positionId as bigint;
     tracked.remove(positionId);
-  };
-
-  const onLiquidationChecked = (positionId: bigint) => {
-    // Position survived this check — keep it tracked, bot keeps probing
-    logger.info({ positionId: positionId.toString() }, "kept");
-  };
-
-  vaultRO.on("PositionOpened", onPositionOpened);
-  perpRO.on("Liquidated", onLiquidated);
-  perpRO.on("LiquidationChecked", onLiquidationChecked);
-
-  return () => {
-    vaultRO.off("PositionOpened", onPositionOpened);
-    perpRO.off("Liquidated", onLiquidated);
-    perpRO.off("LiquidationChecked", onLiquidationChecked);
-  };
+  }
+  for (const ev of liquidated) {
+    const positionId = (ev as any).args.positionId as bigint;
+    tracked.remove(positionId);
+    logger.info({ positionId: positionId.toString() }, "Liquidated — removing from tracked");
+  }
+  for (const ev of checked) {
+    logger.info({ positionId: ((ev as any).args.positionId as bigint).toString() }, "kept");
+  }
 }
 
 /**

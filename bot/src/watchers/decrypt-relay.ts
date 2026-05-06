@@ -80,114 +80,84 @@ export async function handleMatchDecrypt(args: BatchDecryptArgs): Promise<void> 
 }
 
 /**
- * Wires all four engines' decrypt-request events to the appropriate handler.
- * Returns an unsubscribe function.
+ * Poll all four engines' decrypt-request events in (fromBlock, toBlock] and
+ * dispatch each to the appropriate handler. HTTP-based replacement for
+ * the earlier WS subscription. Each request is processed sequentially so
+ * the bot's single signer doesn't race nonces. Per-handler failures are
+ * swallowed (logged inside the handler) so one stuck request can't block
+ * the rest.
  *
  * Event signatures (verified against contracts/contracts/engines/*.sol):
- *   PerpEngine.LiquidationRequested(requestId, positionId, keeper, underwaterHandle)  — 4 args
- *   LimitEngine.TriggerRequested(requestId, orderId, keeper, shouldTriggerHandle)     — 4 args
- *   AMMEngine.WithdrawRequested(requestId, user, claimedShares, matchHandle)          — 4 args
- *   DarkpoolEngine.BatchMatchRequested(requestId, keeper, orderIds, handles)          — 4 args
- *   DarkpoolEngine.MatchProposed(requestId, buyId, sellId, requester, handles)        — 5 args (Phase 11)
+ *   PerpEngine.LiquidationRequested(requestId, positionId, keeper, underwaterHandle)
+ *   LimitEngine.TriggerRequested(requestId, orderId, keeper, shouldTriggerHandle)
+ *   AMMEngine.WithdrawRequested(requestId, user, claimedShares, matchHandle)
+ *   DarkpoolEngine.BatchMatchRequested(requestId, keeper, orderIds, handles)
+ *   DarkpoolEngine.MatchProposed(requestId, buyId, sellId, requester, handles)
  */
-export function subscribeDecryptRelay(
+export async function pollDecryptRequests(
   perpRO: Contract, perpRW: Contract,
   limitRO: Contract, limitRW: Contract,
   ammRO: Contract, ammRW: Contract,
   darkRO: Contract, darkRW: Contract,
   publicDecrypt: PublicDecryptFn,
+  fromBlock: number,
+  toBlock: number,
   logger: Logger,
-): () => void {
-  // CORRECTED: 4-arg event — (requestId, positionId, keeper, underwaterHandle)
-  const onLiq = async (
-    requestId: bigint,
-    _positionId: bigint,
-    _keeper: string,
-    underwaterHandle: string,
-  ) => {
+): Promise<void> {
+  const [liq, trig, withdraw, batch, match] = await Promise.all([
+    perpRO.queryFilter("LiquidationRequested", fromBlock, toBlock),
+    limitRO.queryFilter("TriggerRequested", fromBlock, toBlock),
+    ammRO.queryFilter("WithdrawRequested", fromBlock, toBlock),
+    darkRO.queryFilter("BatchMatchRequested", fromBlock, toBlock),
+    darkRO.queryFilter("MatchProposed", fromBlock, toBlock),
+  ]);
+
+  for (const ev of liq) {
+    const a = (ev as any).args;
     await handleSingleDecrypt({
       engine: perpRW,
       callbackName: "_onLiquidationDecided",
-      requestId,
-      handle: underwaterHandle,
-      publicDecrypt,
-      logger,
+      requestId: a.requestId as bigint,
+      handle: a.underwaterHandle as string,
+      publicDecrypt, logger,
     }).catch(() => {});
-  };
-
-  // CORRECTED: 4-arg event — (requestId, orderId, keeper, shouldTriggerHandle)
-  const onTrig = async (
-    requestId: bigint,
-    _orderId: bigint,
-    _keeper: string,
-    shouldTriggerHandle: string,
-  ) => {
+  }
+  for (const ev of trig) {
+    const a = (ev as any).args;
     await handleSingleDecrypt({
       engine: limitRW,
       callbackName: "_onTriggerDecided",
-      requestId,
-      handle: shouldTriggerHandle,
-      publicDecrypt,
-      logger,
+      requestId: a.requestId as bigint,
+      handle: a.shouldTriggerHandle as string,
+      publicDecrypt, logger,
     }).catch(() => {});
-  };
-
-  // CORRECTED: 4-arg event — (requestId, user, claimedShares, matchHandle)
-  const onWithdraw = async (
-    requestId: bigint,
-    _user: string,
-    _claimedShares: bigint,
-    matchHandle: string,
-  ) => {
+  }
+  for (const ev of withdraw) {
+    const a = (ev as any).args;
     await handleSingleDecrypt({
       engine: ammRW,
       callbackName: "_onWithdrawDecided",
-      requestId,
-      handle: matchHandle,
-      publicDecrypt,
-      logger,
+      requestId: a.requestId as bigint,
+      handle: a.matchHandle as string,
+      publicDecrypt, logger,
     }).catch(() => {});
-  };
-
-  // Unchanged — matches plan: (requestId, keeper, orderIds, handles)
-  const onBatch = async (requestId: bigint, _keeper: string, _orderIds: bigint[], handles: string[]) => {
+  }
+  for (const ev of batch) {
+    const a = (ev as any).args;
     await handleBatchDecrypt({
       engine: darkRW,
-      requestId,
-      handles: [...handles],
-      publicDecrypt,
-      logger,
+      requestId: a.requestId as bigint,
+      handles: [...(a.handles as string[])],
+      publicDecrypt, logger,
     }).catch(() => {});
-  };
-
-  // Phase 11 — pair-match decrypt: (requestId, buyId, sellId, requester, handles)
-  const onMatch = async (
-    requestId: bigint,
-    _buyId: bigint,
-    _sellId: bigint,
-    _requester: string,
-    handles: string[],
-  ) => {
+  }
+  for (const ev of match) {
+    const a = (ev as any).args;
     await handleMatchDecrypt({
       engine: darkRW,
-      requestId,
-      handles: [...handles],
-      publicDecrypt,
-      logger,
+      requestId: a.requestId as bigint,
+      handles: [...(a.handles as string[])],
+      publicDecrypt, logger,
     }).catch(() => {});
-  };
-
-  perpRO.on("LiquidationRequested", onLiq);
-  limitRO.on("TriggerRequested", onTrig);
-  ammRO.on("WithdrawRequested", onWithdraw);
-  darkRO.on("BatchMatchRequested", onBatch);
-  darkRO.on("MatchProposed", onMatch);
-
-  return () => {
-    perpRO.off("LiquidationRequested", onLiq);
-    limitRO.off("TriggerRequested", onTrig);
-    ammRO.off("WithdrawRequested", onWithdraw);
-    darkRO.off("BatchMatchRequested", onBatch);
-    darkRO.off("MatchProposed", onMatch);
-  };
+  }
 }

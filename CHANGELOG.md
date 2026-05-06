@@ -12,6 +12,44 @@ solved design decisions; give future agents full context.
 
 ---
 
+## 2026-05-06
+
+### Phase 11+ Sepolia smoke test + bot WS→HTTP-polling refactor
+
+End-to-end pipeline verification on live Sepolia, plus the load-bearing bot fix that surfaced during it. Phase 11+ is now genuinely autonomous on Sepolia: a user submitting two matchable pair-eligible orders gets two open positions with no human-in-the-loop steps.
+
+**Smoke test infrastructure** (new, `contracts/scripts/`):
+
+- `smoke-sepolia-pair-match.ts` — the actual smoke. Pre-flight asserts (gas, allowlist, on-chain Merkle root sync, oracle freshness with 120s polling, vault deposit handles for both traders), then submits one long + one short pair-eligible order via `relayer-sdk/node` (same encryption pattern as the frontend's `relayer-sdk/web`), then watches `MatchProposed → MatchSettled + 2× PositionOpened` with a 240s default timeout. Stage-by-stage reporting so the failure surface is one log line away.
+- `setup-smoke-traders.ts` — idempotent provisioning. Mints additional underlying USDC (open mint), wraps `PROVISION_AMOUNT` (10 USDCx) for trader B, sets vault as operator on cUSDCMock for trader B, deposits for both admin and trader B if not already done. Order locks are 400 vault-units per side (cpu=200 × size=2), so 10 USDCx is plenty.
+- `poke-match.ts` / `poke-relay.ts` / `poke-submit.ts` — three single-purpose ops scripts that each step the pipeline forward by one stage. Used during development to bypass the (then-broken) bot. Useful as standalone diagnostics: `poke-match` calls `submitMatchPair` from admin; `poke-relay` runs KMS `publicDecrypt` and calls `_onMatchDecided`; `poke-submit` submits one fresh pair-match order. All three explicit-`gasLimit` to bypass the FHEVM hardhat-plugin estimateGas hook on `--network sepolia`.
+- `diagnose-ws.ts` — WS health probe. Watches WSS `newHeads` and a high-frequency contract event (Oracle.PriceCommitted) for 90s, compares against HTTP `queryFilter` ground truth. Used to disprove the initial "WSS endpoint is broken" hypothesis (it isn't — see bot fix below).
+
+**Bot — WS subscriptions replaced with HTTP polling** (`bot/src/`):
+
+- **Root cause**: ethers v6 `WebSocketProvider` against publicnode WSS silently stops delivering contract event notifications after running for some duration. The connection appears alive (no errors, no `unhandledRejection`/`uncaughtException` in the bot's resilience handlers), but `darkRO.on(...)` callbacks never fire for events the bot has confirmed are on-chain. publicnode's WSS occasionally drops connections without emitting a close frame; ethers' silent-drop detection fails, no auto-reconnect.
+- **What was tried**: (1) Restarting the bot — works, but only until the WS stale state recurs (typically within an hour). (2) `diagnose-ws.ts` against a fresh WS connection — confirmed WSS *is* delivering events when fresh, ruling out a pure publicnode-vs-ethers incompatibility. (3) Adding heartbeat / readyState checks — would add complexity for the same publicnode trust assumption. Skipped in favor of the durable fix.
+- **Fix**: replace WS subscriptions with HTTP polling on the existing 15s tick. Each watcher's `subscribeXxx` is replaced with `pollXxxEvents(contract, fromBlock, toBlock, state, logger)` that does a `queryFilter` on the (lastSeenBlock, head] range and applies the same handler logic. `index.ts` runs all five `pollXxxEvents` in parallel at the top of each tick; if all succeed, advances `lastSeenBlock` atomically; if any throws, holds `lastSeenBlock` and retries next tick (TrackedSet primitive-id semantics + per-watcher orderId de-dupe make re-polling idempotent).
+- **Tick fan-out serialized**: previously `Promise.all([runLiq, runTrig, runBatch, runMatch])` raced the bot's single signer against itself on Sepolia, producing `REPLACEMENT_UNDERPRICED` errors when two ticks fired txs with the same `pending`-nonce simultaneously. Now serial: `await runLiq; await runTrig; await runBatch; await runMatch`. Total budget per tick is well under 60s for typical loads.
+- **`bot/src/clients.ts`**: dropped `WebSocketProvider` import + `ws` field; `*RO` contracts now ride the `JsonRpcProvider` (read-only). `_wsUrl` parameter kept for signature stability.
+- **`bot/src/config.ts`**: `WS_URL` env is now optional (was required).
+- **`bot/src/index.ts`**: removed `subscribeXxx` + `unsub*` plumbing + SIGTERM cleanup. New polling driver runs `pollLiquidationEvents`, `pollTriggerEvents`, `pollBatchEvents`, `pollMatchEvents`, `pollDecryptRequests` in parallel at tick start, advances `lastSeenBlock` atomically on success.
+- **`bot/src/watchers/{liquidation,trigger,batch,match,decrypt-relay}.ts`**: each `subscribeXxx` replaced with `pollXxxEvents`. `match.ts` and `batch.ts` add orderId-based dedupe (`tracked.list().some(r => r.orderId === oid)`) — needed because `TrackedSet<T>` for object T compares by reference and re-polling the same range would otherwise produce duplicate entries. `decrypt-relay.ts`'s `pollDecryptRequests` processes requests sequentially within a tick to avoid the same single-signer nonce race.
+
+**Verification** (live Sepolia):
+
+- Bot tests: 25/25 pass. Build clean.
+- Smoke test passed end-to-end **autonomously** (no manual intervention): orders 2 + 3 settled by bot wallet `0x2bEE9791…05711` at tx `0x82388fee…e48` block 10797092, opening positions 2 (admin long) and 3 (trader B short).
+- Confirms: HTTP polling picks up live events (`tracked pair-eligible dark order` fired ~15s after submit), submit-half drives `submitMatchPair` correctly, decrypt-half (KMS publicDecrypt + `_onMatchDecided`) fires for new `MatchProposed` events.
+
+**Known follow-up** (deliberately deferred): Sepolia oracle relayer cycle (~84s/tick × 90s staleness window) leaves narrow freshness windows. Bot's `submitMatchPair` reverts with `OraclePriceStale` (selector `0x08b9f95b`) and records 10-block (~120s) back-off, so a single match takes 5–15 min on average to land. Fix is one of: (a) skip back-off specifically on `OraclePriceStale` selector in `runMatchTick` (smaller — drops match latency to ~30s), (b) parallelize oracle-relayer per-tick submissions (broader — raises freshness fraction to ~60%+). Either is small; not blocking for Phase 11+ correctness, just for "feels live to a real user." See follow-up commit.
+
+**Trader B onboarding** (`compliance-backend/data/allowlist.json`): added `0x654E2b0EF6cb760E683F7e2871ba22dE939eCe2b` as the disposable smoke-test counterparty (admin is trader A). On-chain Merkle root pushed via the existing `sync-compliance-root.ts`.
+
+**Files**: `bot/src/clients.ts`, `bot/src/config.ts`, `bot/src/index.ts`, `bot/src/watchers/{liquidation,trigger,batch,match,decrypt-relay}.ts`, `compliance-backend/data/allowlist.json`, `contracts/scripts/{smoke-sepolia-pair-match,setup-smoke-traders,poke-match,poke-relay,poke-submit,diagnose-ws}.ts` (all new under scripts/).
+
+---
+
 ## 2026-05-05
 
 ### USER_GUIDE.md updated for Phase 11 + Faucet + Sepolia state

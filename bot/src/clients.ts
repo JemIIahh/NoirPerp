@@ -1,4 +1,4 @@
-import { JsonRpcProvider, WebSocketProvider, Wallet, Contract } from "ethers";
+import { JsonRpcProvider, Wallet, Contract } from "ethers";
 import type { Deployment } from "./config.js";
 
 // Minimal ABIs — only the methods/events the bot uses.
@@ -61,9 +61,14 @@ const DARK_ABI = [
   "function _onMatchDecided(uint256 requestId, bytes32[] handles, bytes cleartexts, bytes proof) external",
 ];
 
+// Reads use the HTTP rpc (no signer, no WS). Writes use the signer (HTTP).
+// We keep the *RO / *RW field naming for callsite compatibility, but both
+// halves now ride the same JsonRpcProvider. WebSocket subscriptions were
+// removed because publicnode WSS silently drops connections without
+// auto-reconnect (verified 2026-05-05 — see CHANGELOG). Polling on the
+// existing 15s tick is more robust and adds at most ~15s delivery latency.
 export type Clients = {
   rpc: JsonRpcProvider;
-  ws: WebSocketProvider;
   signer: Wallet;
   vaultRO: Contract;
   perpRO: Contract;
@@ -78,26 +83,23 @@ export type Clients = {
 
 export function makeClients(
   rpcUrl: string,
-  wsUrl: string,
+  _wsUrl: string, // intentionally unused; kept for signature stability
   botKey: string,
   deployment: Deployment,
 ): Clients {
   const rpc = new JsonRpcProvider(rpcUrl);
-  const ws = new WebSocketProvider(wsUrl);
   const signer = new Wallet(botKey, rpc);
   return {
     rpc,
-    ws,
     signer,
-    // NoirVault: subscribe to PositionOpened/PositionClosed (position events live here)
-    vaultRO:  new Contract(deployment.contracts.NoirVault,      VAULT_ABI, ws),
-    perpRO:   new Contract(deployment.contracts.PerpEngine,     PERP_ABI,  ws),
+    vaultRO:  new Contract(deployment.contracts.NoirVault,      VAULT_ABI, rpc),
+    perpRO:   new Contract(deployment.contracts.PerpEngine,     PERP_ABI,  rpc),
     perpRW:   new Contract(deployment.contracts.PerpEngine,     PERP_ABI,  signer),
-    limitRO:  new Contract(deployment.contracts.LimitEngine,    LIMIT_ABI, ws),
+    limitRO:  new Contract(deployment.contracts.LimitEngine,    LIMIT_ABI, rpc),
     limitRW:  new Contract(deployment.contracts.LimitEngine,    LIMIT_ABI, signer),
-    ammRO:    new Contract(deployment.contracts.AMMEngine,      AMM_ABI,   ws),
+    ammRO:    new Contract(deployment.contracts.AMMEngine,      AMM_ABI,   rpc),
     ammRW:    new Contract(deployment.contracts.AMMEngine,      AMM_ABI,   signer),
-    darkRO:   new Contract(deployment.contracts.DarkpoolEngine, DARK_ABI,  ws),
+    darkRO:   new Contract(deployment.contracts.DarkpoolEngine, DARK_ABI,  rpc),
     darkRW:   new Contract(deployment.contracts.DarkpoolEngine, DARK_ABI,  signer),
   };
 }

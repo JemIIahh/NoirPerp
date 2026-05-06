@@ -3,11 +3,11 @@ import type { Logger } from "pino";
 import { loadConfig } from "./config.js";
 import { makeClients } from "./clients.js";
 import { TrackedSet } from "./state.js";
-import { subscribeLiquidation, runLiquidationTick } from "./watchers/liquidation.js";
-import { subscribeTrigger, runTriggerTick } from "./watchers/trigger.js";
-import { subscribeBatch, runBatchTick, type DarkOrderRef } from "./watchers/batch.js";
-import { subscribeMatch, runMatchTick, type PairOrderRef, type RecentlyFailed } from "./watchers/match.js";
-import { subscribeDecryptRelay, type PublicDecryptFn } from "./watchers/decrypt-relay.js";
+import { pollLiquidationEvents, runLiquidationTick } from "./watchers/liquidation.js";
+import { pollTriggerEvents, runTriggerTick } from "./watchers/trigger.js";
+import { pollBatchEvents, runBatchTick, type DarkOrderRef } from "./watchers/batch.js";
+import { pollMatchEvents, runMatchTick, type PairOrderRef, type RecentlyFailed } from "./watchers/match.js";
+import { pollDecryptRequests, type PublicDecryptFn } from "./watchers/decrypt-relay.js";
 
 async function makePublicDecrypt(network: string): Promise<PublicDecryptFn> {
   if (network === "local") {
@@ -130,35 +130,18 @@ async function main(): Promise<void> {
 
   const fromBlock = Number(process.env.START_BLOCK ?? 0);
   await replayEvents(clients, fromBlock, liquidations, triggers, batches, pairs, logger);
-  // MVP: events emitted in the brief window between replay tip and live
-  // WS subscription start are silently lost. Acceptable here because
-  // replay is fast (~1 block typically), and the bot's tick loop will
-  // catch any missed orders on the next tick (requestLiquidation /
-  // requestTrigger / requestBatchMatch are idempotent — engine reverts
-  // on inactive positions/orders without state change). Real-time
-  // guarantees deferred to Phase 9 (WS-then-replay-from-WS-block pattern).
-
-  // CORRECTED: subscribeLiquidation takes (vaultRO, perpRO, tracked, logger) — 4 args per Task 8
-  const unsubLiq = subscribeLiquidation(clients.vaultRO, clients.perpRO, liquidations, logger);
-  const unsubTrig = subscribeTrigger(clients.limitRO, triggers, logger);
-  const unsubBatch = subscribeBatch(clients.darkRO, batches, logger);
-  const unsubMatch = subscribeMatch(clients.darkRO, pairs, recentlyFailedMatches, logger);
 
   const publicDecrypt = await makePublicDecrypt(cfg.deployment.network);
-  const unsubRelay = subscribeDecryptRelay(
-    clients.perpRO, clients.perpRW,
-    clients.limitRO, clients.limitRW,
-    clients.ammRO, clients.ammRW,
-    clients.darkRO, clients.darkRW,
-    publicDecrypt, logger,
-  );
+
+  // Replaces WS subscriptions (removed 2026-05-05 — publicnode WSS dropped
+  // connections silently with no auto-reconnect, see CHANGELOG). Each tick
+  // polls (lastSeenBlock, head] via HTTP queryFilter, then runs the
+  // submission tick functions.
+  let lastSeenBlock = await clients.rpc.getBlockNumber();
+  logger.info({ lastSeenBlock }, "polling baseline established");
 
   process.on("SIGTERM", () => {
-    unsubLiq();
-    unsubTrig();
-    unsubBatch();
-    unsubMatch();
-    unsubRelay();
+    logger.info({}, "shutting down");
     process.exit(0);
   });
 
@@ -167,12 +150,38 @@ async function main(): Promise<void> {
     if (busy) return;
     busy = true;
     try {
-      await Promise.all([
-        runLiquidationTick(clients.perpRW, liquidations, logger),
-        runTriggerTick(clients.limitRW, triggers, logger),
-        runBatchTick(clients.darkRW, batches, logger),
-        runMatchTick(clients.darkRW, pairs, recentlyFailedMatches, logger),
-      ]);
+      const head = await clients.rpc.getBlockNumber();
+      if (head > lastSeenBlock) {
+        try {
+          await Promise.all([
+            pollLiquidationEvents(clients.vaultRO, clients.perpRO, lastSeenBlock + 1, head, liquidations, logger),
+            pollTriggerEvents(clients.limitRO, lastSeenBlock + 1, head, triggers, logger),
+            pollBatchEvents(clients.darkRO, lastSeenBlock + 1, head, batches, logger),
+            pollMatchEvents(clients.darkRO, lastSeenBlock + 1, head, pairs, recentlyFailedMatches, logger),
+            pollDecryptRequests(
+              clients.perpRO, clients.perpRW,
+              clients.limitRO, clients.limitRW,
+              clients.ammRO, clients.ammRW,
+              clients.darkRO, clients.darkRW,
+              publicDecrypt, lastSeenBlock + 1, head, logger,
+            ),
+          ]);
+          lastSeenBlock = head;
+        } catch (err) {
+          // Any queryFilter failure: don't advance lastSeenBlock, retry next tick.
+          // TrackedSet.add is idempotent for primitive ids; object-typed sets
+          // are de-duped by orderId in the watchers themselves.
+          logger.error({ err: (err as Error).message, fromBlock: lastSeenBlock + 1, toBlock: head }, "event poll failed — will retry");
+        }
+      }
+      // Serialized — all four ticks share the bot's single signer, so
+      // running them concurrently on Sepolia produces REPLACEMENT_UNDERPRICED
+      // nonce races (observed 2026-05-05). At 15s tick + ~14s/tx, four
+      // serial ticks fit comfortably in the budget for typical loads.
+      await runLiquidationTick(clients.perpRW, liquidations, logger);
+      await runTriggerTick(clients.limitRW, triggers, logger);
+      await runBatchTick(clients.darkRW, batches, logger);
+      await runMatchTick(clients.darkRW, pairs, recentlyFailedMatches, logger);
     } finally {
       busy = false;
     }
