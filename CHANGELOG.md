@@ -12,6 +12,49 @@ solved design decisions; give future agents full context.
 
 ---
 
+## 2026-05-07
+
+### Compliance self-serve enrollment endpoint (testnet) — closes the judge-onboarding wall
+
+Identified the load-bearing UX gap for hackathon judging: connecting any wallet that isn't pre-allowlisted shows "Wallet not on the compliance allowlist" with no way forward — the only path was admin-side curl + sync-root tx. With three addresses ever added (Hardhat default, admin, trader B), every external user hits a wall.
+
+**What this is, and what it isn't**: this commit does NOT remove the on-chain compliance gate (still `Compliance.verify(msg.sender, proof) == true` required on every engine entry). It adds a *testnet-only* automated path for any wallet to add itself to the off-chain Merkle tree, with the backend autonomously pushing the new root on-chain. Same cryptographic mechanism; production deploys would gate this endpoint behind a real KYC provider (Persona/Sumsub/etc.) and rely on the existing admin path. Phase-7 deviation note ("KYC stubbed") still applies — what's been built is the *open-allowlist testnet door*, not real KYC integration.
+
+**Backend** (`compliance-backend/src/`):
+
+- `config.ts`: new optional `selfServe: SelfServeConfig` block (gated by `SELF_SERVE_ENABLED=true`). Reads `RPC_URL`, `ADMIN_PRIVATE_KEY`, `DEPLOYMENT_PATH`. Disabled by default — production deploys leave the env unset and the endpoint returns 503.
+- `server.ts`: new `POST /self-serve/add` endpoint. No `x-api-key`. Validates address, calls `tree.add(addr)` (idempotent), then immediately calls `Compliance.updateRoot(newRoot)` via an inline `syncOnchainRoot` helper that signs from `ADMIN_PRIVATE_KEY`. Returns `{ added, newRoot, count, txHash }`. On on-chain failure: tree mutation persists locally but client gets 502 with retry hint.
+- `/health` response gains `selfServe: boolean` so the frontend can choose between the testnet self-serve button and the production "request access" mailto link.
+- `index.ts`: passes new `selfServe` block through to `buildApp`.
+- `test/server.test.ts`: 2 new tests — endpoint returns 503 when disabled, returns 400 on bad address. Total 16/16 pass.
+
+**Why an inline `syncOnchainRoot` helper, not a separate file**: keeps backend modules to the existing four. The helper is ~15 lines, used only inside the self-serve handler, doesn't justify its own file.
+
+**Why the backend signs with the same admin EOA as `Compliance.transferAdmin`**: avoids needing a Solidity change to add a delegated `rootUpdater` role. Trade-off: the backend's `.env` now holds the admin key. Acceptable for testnet (already gitignored, same security posture as `contracts/.env`); a production refactor would split the role into a low-privilege updater EOA whose only capability is `updateRoot`, leaving global admin (relayer rotation, deviation tuning, ownership transfer) on a more guarded key.
+
+**Frontend** (`frontend/src/`):
+
+- `hooks/useCompliance.ts`: new `useSelfServeAdd()` mutation. POSTs to `/self-serve/add`, on success invalidates both the per-address proof query and the global health query so the page re-renders as verified.
+- `pages/Compliance.tsx`: replaces the `mailto:` "Request access" button with a "Get verified (testnet)" primary button when `health.selfServe === true`. Falls back to the original mailto when self-serve is disabled (production deploys). Shows a small disclaimer line clarifying that testnet self-serve adds the address instantly while mainnet would route through real KYC. Loading + error states wired through `useMutation`.
+- `npx tsc --noEmit` clean.
+
+**End-to-end live verification on Sepolia 2026-05-07**:
+
+```
+random Wallet.createRandom() → POST /self-serve/add → 200 OK
+  newRoot 0xaec90d…b15ce, count=4, txHash 0xfc31b37a…2a39
+GET /proof/<addr> → allowlisted=true, proof of length 2
+Compliance.verify(addr, proof) on-chain → true
+```
+
+Test address (`0x1c47…37a9`) was then removed via the existing `/admin/remove` + `sync-compliance-root.ts` so the committed `allowlist.json` stays at the original 3 entries. End state on-chain matches end state off-chain.
+
+**What this changes for the judge experience**: connecting any wallet → click "Get verified (testnet)" → ~10s of waiting on the on-chain tx → wallet is now allowlisted, can proceed to Faucet → Trade. No admin contact. No friction.
+
+**Files**: `compliance-backend/src/{config,server,index}.ts`, `compliance-backend/test/server.test.ts`, `compliance-backend/.env.example`, `frontend/src/hooks/useCompliance.ts`, `frontend/src/pages/Compliance.tsx`. Plus this CHANGELOG entry.
+
+---
+
 ## 2026-05-06
 
 ### Oracle.deviationBps bumped 50 → 150 (Sepolia ETH 2-of-3 quorum reliability)

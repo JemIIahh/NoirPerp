@@ -2,10 +2,10 @@ import { useAccount } from "wagmi";
 import { useState } from "react";
 import {
   ShieldCheck, ShieldX, Mail, Copy, CheckCircle2, AlertCircle,
-  Activity, GitBranch, Hash, Info,
+  Activity, GitBranch, Hash, Info, Sparkles, Loader2,
 } from "lucide-react";
 import clsx from "clsx";
-import { useComplianceProof, useComplianceHealth } from "../hooks/useCompliance";
+import { useComplianceProof, useComplianceHealth, useSelfServeAdd } from "../hooks/useCompliance";
 import { WalletGate } from "../components/WalletGate";
 import { Card, SectionHeader, Badge, Spinner, Stat } from "../components/ui";
 import { Button } from "../components/Form";
@@ -19,8 +19,10 @@ function Inner() {
   const { address } = useAccount();
   const { data: proof, isLoading, error } = useComplianceProof();
   const { data: health } = useComplianceHealth();
+  const selfServe = useSelfServeAdd();
 
   const allowlisted = proof?.allowlisted ?? false;
+  const selfServeEnabled = health?.selfServe === true;
 
   return (
     <div className="space-y-8">
@@ -87,17 +89,43 @@ function Inner() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col items-end gap-2">
             {allowlisted ? (
               <Badge tone="mint" icon={<CheckCircle2 size={11} />}>verified</Badge>
             ) : !isLoading && (
-              <a
-                href="mailto:compliance@noirperp.example?subject=NoirPerp%20allowlist%20access"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-noir-cream text-noir-black text-[13px] font-semibold tracking-tight hover:bg-noir-accent transition-colors"
-              >
-                <Mail size={14} />
-                Request access
-              </a>
+              <>
+                {selfServeEnabled ? (
+                  <button
+                    onClick={() => selfServe.mutate()}
+                    disabled={selfServe.isPending || !address}
+                    className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-noir-cream text-noir-black text-[13px] font-semibold tracking-tight hover:bg-noir-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {selfServe.isPending
+                      ? <><Loader2 size={14} className="animate-spin" /> Enrolling…</>
+                      : <><Sparkles size={14} /> Get verified (testnet)</>}
+                  </button>
+                ) : (
+                  <a
+                    href="mailto:compliance@noirperp.example?subject=NoirPerp%20allowlist%20access"
+                    className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-noir-cream text-noir-black text-[13px] font-semibold tracking-tight hover:bg-noir-accent transition-colors"
+                  >
+                    <Mail size={14} />
+                    Request access
+                  </a>
+                )}
+                {selfServe.isError && (
+                  <div className="text-[11px] text-rose-300 max-w-[260px] text-right">
+                    {(selfServe.error as Error).message}
+                  </div>
+                )}
+                {selfServeEnabled && (
+                  <div className="text-[10px] text-noir-cream/40 max-w-[260px] text-right leading-snug">
+                    Testnet only. Adds your address to the Merkle tree
+                    instantly. Mainnet would gate this behind a real KYC
+                    provider — same on-chain mechanism.
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

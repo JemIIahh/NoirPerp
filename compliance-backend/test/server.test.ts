@@ -16,7 +16,11 @@ beforeEach(() => {
   const dir = mkdtempSync(join(tmpdir(), "compliance-"));
   path = join(dir, "allowlist.json");
   writeFileSync(path, JSON.stringify({ addresses: [] }));
-  app = buildApp({ allowlistPath: path, adminApiKey: KEY });
+  app = buildApp({
+    allowlistPath: path,
+    adminApiKey: KEY,
+    selfServe: { enabled: false, rpcUrl: "", adminPrivateKey: "", complianceAddress: "" },
+  });
 });
 
 describe("compliance-backend server", () => {
@@ -88,6 +92,32 @@ describe("compliance-backend server", () => {
       .post("/admin/add")
       .set("x-api-key", KEY)
       .send({ address: "not-an-address" });
+    expect(res.status).toEqual(400);
+  });
+
+  it("POST /self-serve/add returns 503 when self-serve is disabled (default)", async () => {
+    // The default app fixture has selfServe.enabled=false; the endpoint
+    // should report it explicitly rather than silently no-oping or
+    // updating the tree without on-chain sync.
+    const res = await request(app).post("/self-serve/add").send({ address: ADDR_A });
+    expect(res.status).toEqual(503);
+    expect(res.body.error).toMatch(/self-serve not enabled/);
+  });
+
+  it("POST /self-serve/add rejects invalid address even when disabled-check would otherwise pass", async () => {
+    // Build a fresh app with self-serve enabled (rpcUrl/key/address are
+    // not exercised because the address validation fails first).
+    const enabledApp = buildApp({
+      allowlistPath: path,
+      adminApiKey: KEY,
+      selfServe: {
+        enabled: true,
+        rpcUrl: "http://unused",
+        adminPrivateKey: "0x" + "11".repeat(32),
+        complianceAddress: "0x0000000000000000000000000000000000000001",
+      },
+    });
+    const res = await request(enabledApp).post("/self-serve/add").send({ address: "nope" });
     expect(res.status).toEqual(400);
   });
 });
