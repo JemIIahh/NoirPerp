@@ -153,6 +153,21 @@ describe("match watcher — runMatchTick", () => {
     expect(recentlyFailed.get(pairKey(1n, 2n))).toBe(100n);  // back-off recorded at current block
   });
 
+  it("does NOT record back-off when submitMatchPair reverts with OraclePriceStale (transient on Sepolia)", async () => {
+    tracked.add(longBuy(1n, ALICE));
+    tracked.add(shortSell(2n, BOB));
+    // ethers v6 attaches the revert selector as `err.data` on CALL_EXCEPTION.
+    // 0x08b9f95b = keccak256("OraclePriceStale()")[:4] — verified live 2026-05-05.
+    const stale = Object.assign(new Error("execution reverted"), { data: "0x08b9f95b" });
+    darkRW.submitMatchPair.mockRejectedValueOnce(stale);
+
+    await runMatchTick(darkRW as any, tracked, recentlyFailed, logger as any);
+
+    expect(darkRW.submitMatchPair).toHaveBeenCalledTimes(1);
+    expect(recentlyFailed.size).toBe(0);  // transient → no back-off, will retry next tick
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
   it("residual order re-enters the candidate pool and gets matched on the next tick", async () => {
     // Initial: large buy (id 1) + small sell (id 2) → pair (1,2)
     tracked.add(longBuy(1n, ALICE));

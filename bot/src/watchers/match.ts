@@ -178,6 +178,18 @@ export async function runMatchTick(
       "submitMatchPair sent",
     );
   } catch (err) {
+    // OraclePriceStale (selector 0x08b9f95b) is transient on Sepolia:
+    // freshness windows are narrow (~10–20s every ~120s relayer cycle).
+    // Skip back-off so the next 15s tick can retry instead of waiting
+    // for the 10-block (~120s) cooldown to clear. Drops average match
+    // latency from ~5–15min to ~30s.
+    if ((err as { data?: string })?.data === "0x08b9f95b") {
+      logger.info(
+        { buyId: buy.orderId.toString(), sellId: sell.orderId.toString() },
+        "submitMatchPair: oracle stale — retry next tick",
+      );
+      return;
+    }
     recentlyFailed.set(pairKey(buy.orderId, sell.orderId), block);
     logger.error(
       {

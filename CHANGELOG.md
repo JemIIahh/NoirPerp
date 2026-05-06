@@ -14,6 +14,24 @@ solved design decisions; give future agents full context.
 
 ## 2026-05-06
 
+### Bot match-tick: skip back-off on OraclePriceStale (drops average match latency 5–15min → ~30s)
+
+The bot's `runMatchTick` records a 10-block (~120s) back-off on any `submitMatchPair` revert, including transient `OraclePriceStale` (selector `0x08b9f95b`). On Sepolia the oracle relayer's serial 6-tx-per-tick cycle (~84s) versus the contract's 90s staleness window leaves only ~10–20s freshness windows per cycle, so the bot's first attempt nearly always lands in a stale gap and back-off pushes the second attempt 120s out — well past the next stale window. Net: average match-settle wall-clock 5–15min, bouncing through several back-off cycles before catching a fresh window.
+
+**Fix**: in the catch block, if `err.data === "0x08b9f95b"` (ethers v6 attaches the revert selector to CALL_EXCEPTION errors as the `data` field), skip recording back-off and return silently. Next 15s tick re-attempts. With ~10–20s fresh windows out of every ~120s cycle, two-three tick retries usually land within ~30s.
+
+**Why selector-based** (not a pre-flight `oracle.getPrice(market).fresh` check): selector is 1 line, no signature change, no Oracle contract dependency in the watcher. Pre-flight check would also work but adds an RPC roundtrip per tick + new dependency. Other transient reverts (e.g. concurrent mempool race) still hit back-off correctly — only `OraclePriceStale` is whitelisted.
+
+**Other engines**: not yet patched. `runLiquidationTick` and `runTriggerTick` also revert frequently with `OraclePriceStale` on Sepolia (PerpEngine.requestLiquidation / LimitEngine.requestTrigger both consume oracle price). They don't have a back-off mechanism — they just retry every 15s — so the cost is RPC noise, not pipeline stall. Deferred.
+
+**Test**: `bot/test/match.test.ts` adds one case constructing the ethers-v6-shaped CALL_EXCEPTION (`Object.assign(new Error("execution reverted"), { data: "0x08b9f95b" })`) and asserting `recentlyFailed.size === 0` after the tick. 26/26 bot tests pass.
+
+**Files**: `bot/src/watchers/match.ts`, `bot/test/match.test.ts`.
+
+---
+
+## 2026-05-06
+
 ### Phase 11+ Sepolia smoke test + bot WS→HTTP-polling refactor
 
 End-to-end pipeline verification on live Sepolia, plus the load-bearing bot fix that surfaced during it. Phase 11+ is now genuinely autonomous on Sepolia: a user submitting two matchable pair-eligible orders gets two open positions with no human-in-the-loop steps.
