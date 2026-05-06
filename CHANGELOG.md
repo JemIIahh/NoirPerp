@@ -14,6 +14,24 @@ solved design decisions; give future agents full context.
 
 ## 2026-05-06
 
+### Oracle.deviationBps bumped 50 → 150 (Sepolia ETH 2-of-3 quorum reliability)
+
+Live observation during the staleness-fix verification run: ETH price ticks faster than the oracle relayer's serial A→B per-market submission can land within the previous 50 bps (0.5%) deviation tolerance. Concrete failure: relayer A submits price P at log time T; relayer B reads price P' at T+~14s; if |P − P'| > 0.5% × P, the contract reverts B's commit (or A's mined-but-reverted later — same outcome), 2-of-3 quorum fails, ETH stays uncommitted, oracle goes stale and stays stale until the next tick where prices happen to be close enough. Observed on Sepolia 2026-05-06: ETH oracle stuck stale for 4+ minutes despite both relayers actively submitting.
+
+**Fix**: `Oracle.setDeviationBps(150)` admin tx, signed by admin (`0x87E69c…6D67`). Tolerance widened to 1.5% — comfortable headroom for ETH's typical ~0.3–0.6% drift over the relayer's ~14s tx-confirmation cadence on Sepolia.
+
+**Why 150 specifically**: keeps the relayer-tampering protection meaningful (a relayer trying to push a 2%+ off-market price still gets rejected) while accommodating real Sepolia gas-cadence drift. BTC drifts even less in absolute % terms; SOL is currently mock-priced (no Chainlink Sepolia feed) so deviation doesn't constrain it. Number not tuned to a specific target — picked as the smallest round value that gives ~3× headroom over observed real drift.
+
+**On-chain state after**: `Oracle.deviationBps() == 150`. Tx `0xa5b55ff9…6ddd` block (current). `DeviationBpsChanged(50, 150)` event emitted.
+
+**Why this matters now**: the `runMatchTick` staleness-skip fix that landed in the previous commit is correct, but its measurable benefit (5–15min → 1.5–2.5min match latency) only manifests if oracle freshness windows actually open. With 50 bps, freshness windows on ETH were rare-to-absent during the test run; with 150 bps, ETH should commit on most ticks → freshness fraction ~60–80% → bot lands a successful submitMatchPair within 1–2 retries on average.
+
+**Not changed**: `stalenessSeconds` stays at 90 (the time gating is fine; the deviation gating was the bottleneck). Off-chain relayer code unchanged. `deploy-sepolia.ts` constructor still passes 50 — future redeploys will hit the same problem; deferred to that point.
+
+**Files**: no source files (single admin tx). `CHANGELOG.md` only.
+
+---
+
 ### Bot match-tick: skip back-off on OraclePriceStale (drops average match latency 5–15min → ~30s)
 
 The bot's `runMatchTick` records a 10-block (~120s) back-off on any `submitMatchPair` revert, including transient `OraclePriceStale` (selector `0x08b9f95b`). On Sepolia the oracle relayer's serial 6-tx-per-tick cycle (~84s) versus the contract's 90s staleness window leaves only ~10–20s freshness windows per cycle, so the bot's first attempt nearly always lands in a stale gap and back-off pushes the second attempt 120s out — well past the next stale window. Net: average match-settle wall-clock 5–15min, bouncing through several back-off cycles before catching a fresh window.
