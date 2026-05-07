@@ -6,7 +6,7 @@ import { WalletGate } from "../components/WalletGate";
 import { Button } from "../components/Form";
 import { Card, SectionHeader, Stat, Badge } from "../components/ui";
 import { useDeployment } from "../hooks/useDeployment";
-import { ERC7984_ABI, UNDERLYING_USDC_ABI } from "../lib/abis";
+import { ERC7984_ABI, UNDERLYING_USDC_ABI, VAULT_ABI } from "../lib/abis";
 
 // Underlying ERC20 mock that backs Zama's cUSDCMock on Sepolia.
 // Hardcoded — it's an external contract, not part of our deployments.json.
@@ -16,8 +16,21 @@ const UNDERLYING_USDC_ADDRESS: Address =
 const FAUCET_AMOUNT_USDC = 10_000n;
 const UNDERLYING = parseAbi(UNDERLYING_USDC_ABI);
 const CUSDC = parseAbi(ERC7984_ABI);
+const VAULT = parseAbi(VAULT_ABI);
 
-type Step = "idle" | "minting" | "approving" | "wrapping" | "done" | "error";
+// Max uint48 for ERC-7984 setOperator(operator, until). 2^48 - 1.
+// viem's parseAbi maps uint48 → number; this fits in JS number (well under 2^53).
+const OPERATOR_FOREVER = Number((1n << 48n) - 1n);
+
+type Step =
+  | "idle"
+  | "minting"
+  | "approving"
+  | "wrapping"
+  | "operator"
+  | "depositing"
+  | "done"
+  | "error";
 
 export default function Faucet() { return <WalletGate><Inner /></WalletGate>; }
 
@@ -31,6 +44,7 @@ function Inner() {
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
 
   const cUSDCAddr = deployment?.contracts.cUSDCMock as Address | undefined;
+  const vaultAddr = deployment?.contracts.NoirVault as Address | undefined;
   const amount = parseUnits(FAUCET_AMOUNT_USDC.toString(), 6);
 
   const { data: underlyingBal, refetch: refetchUnderlying } = useReadContract({
@@ -49,8 +63,26 @@ function Inner() {
     query: { enabled: !!address && !!cUSDCAddr, refetchInterval: 10_000 },
   });
 
+  const { data: operatorSet, refetch: refetchOperator } = useReadContract({
+    address: cUSDCAddr,
+    abi: CUSDC,
+    functionName: "isOperator",
+    args: address && vaultAddr ? [address, vaultAddr] : undefined,
+    query: { enabled: !!address && !!cUSDCAddr && !!vaultAddr, refetchInterval: 10_000 },
+  });
+
+  const { data: vaultBalanceHandle, refetch: refetchVaultBal } = useReadContract({
+    address: vaultAddr,
+    abi: VAULT,
+    functionName: "getBalance",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address && !!vaultAddr, refetchInterval: 10_000 },
+  });
+  const ZERO_HANDLE = "0x0000000000000000000000000000000000000000000000000000000000000000";
+  const hasVaultBalance = vaultBalanceHandle !== undefined && vaultBalanceHandle !== ZERO_HANDLE;
+
   async function onMint() {
-    if (!address || !cUSDCAddr || !publicClient) return;
+    if (!address || !cUSDCAddr || !vaultAddr || !publicClient) return;
     setError(null);
     setLastTxHash(null);
 
@@ -89,23 +121,52 @@ function Inner() {
       });
       await publicClient.waitForTransactionReceipt({ hash: wrapHash });
 
-      setLastTxHash(wrapHash);
+      // Step 4: setOperator(vault) on cUSDCMock so vault.deposit can pull
+      // USDCx via ERC-7984's confidentialTransferFrom. Skip if already set.
+      if (!operatorSet) {
+        setStep("operator");
+        const opHash = await writeContractAsync({
+          address: cUSDCAddr,
+          abi: CUSDC,
+          functionName: "setOperator",
+          args: [vaultAddr, OPERATOR_FOREVER],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: opHash });
+      }
+
+      // Step 5: deposit USDCx into NoirVault. After this the user can
+      // submit orders — engines debit collateral from the vault balance.
+      // Amount is the same we just wrapped (cUSDCMock units = 1e6/USDCx).
+      setStep("depositing");
+      const depHash = await writeContractAsync({
+        address: vaultAddr,
+        abi: VAULT,
+        functionName: "deposit",
+        args: [amount],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: depHash });
+
+      setLastTxHash(depHash);
       setStep("done");
       refetchUnderlying();
       refetchAllowance();
+      refetchOperator();
+      refetchVaultBal();
     } catch (e) {
       setError((e as Error).message ?? "unknown error");
       setStep("error");
     }
   }
 
-  const busy = step === "minting" || step === "approving" || step === "wrapping";
+  const busy = step === "minting" || step === "approving" || step === "wrapping" || step === "operator" || step === "depositing";
   const stepLabel: Record<Step, string> = {
-    idle: `Mint ${FAUCET_AMOUNT_USDC.toLocaleString()} USDCx`,
-    minting: "1/3 — minting underlying USDC…",
-    approving: "2/3 — approving wrapper…",
-    wrapping: "3/3 — wrapping into confidential balance…",
-    done: `Mint ${FAUCET_AMOUNT_USDC.toLocaleString()} more USDCx`,
+    idle: `Mint ${FAUCET_AMOUNT_USDC.toLocaleString()} USDCx + deposit to vault`,
+    minting: "1/5 — minting underlying USDC…",
+    approving: "2/5 — approving wrapper…",
+    wrapping: "3/5 — wrapping into confidential balance…",
+    operator: "4/5 — granting vault operator role…",
+    depositing: "5/5 — depositing into vault…",
+    done: `Mint ${FAUCET_AMOUNT_USDC.toLocaleString()} more & deposit`,
     error: "Try again",
   };
 
@@ -114,7 +175,7 @@ function Inner() {
       <SectionHeader
         eyebrow={<><Droplets size={10} /> Faucet</>}
         title={<>Test <span className="shimmer-text">USDCx</span> for Sepolia</>}
-        description="Mint test USDCx for trading. One click runs three transactions: mint the underlying public USDC mock, approve the confidential wrapper, then wrap into your encrypted USDCx balance. Free, unlimited."
+        description="One click takes you all the way to ready-to-trade. Five sequential transactions: mint underlying USDC, approve wrapper, wrap into encrypted USDCx, set vault operator, deposit into NoirVault. Skips on-chain steps already complete on repeat clicks."
       />
 
       <Card hero className="p-8 relative overflow-hidden animate-fade-up">
@@ -137,7 +198,7 @@ function Inner() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Stat
               label="Your underlying USDC"
               value={underlyingBal !== undefined ? Number(formatUnits(underlyingBal as bigint, 6)).toLocaleString() : "—"}
@@ -154,6 +215,11 @@ function Inner() {
               }
               hint="approve(cUSDCMock, …)"
             />
+            <Stat
+              label="Vault deposit"
+              value={hasVaultBalance ? "Funded" : "Empty"}
+              hint={operatorSet ? "Operator set" : "No operator"}
+            />
           </div>
 
           {error && (
@@ -167,14 +233,14 @@ function Inner() {
             <div className="flex items-start gap-2 p-3 rounded-lg bg-noir-accent/10 border border-noir-accent/30 text-[12px] text-noir-accent">
               <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
               <span>
-                Wrapped successfully.{" "}
+                Deposited successfully — you can now Trade or use the Darkpool.{" "}
                 <a
                   href={`https://sepolia.etherscan.io/tx/${lastTxHash}`}
                   target="_blank"
                   rel="noreferrer"
                   className="underline decoration-dotted inline-flex items-center gap-1"
                 >
-                  View wrap tx <ExternalLink size={11} />
+                  View deposit tx <ExternalLink size={11} />
                 </a>
               </span>
             </div>
@@ -217,6 +283,18 @@ function Inner() {
             <span className="text-noir-cream">Wrap.</span> Calls{" "}
             <code className="text-noir-cream/60">wrap(you, amount)</code> on cUSDCMock — burns underlying,
             mints encrypted balance to you. Now you have USDCx.
+          </li>
+          <li>
+            <span className="text-noir-cream">Set vault operator.</span> Calls{" "}
+            <code className="text-noir-cream/60">setOperator(NoirVault, max)</code> on cUSDCMock — gives
+            the vault permission to pull USDCx via ERC-7984's confidentialTransferFrom.
+            Skipped on subsequent mints if already set.
+          </li>
+          <li>
+            <span className="text-noir-cream">Deposit to vault.</span> Calls{" "}
+            <code className="text-noir-cream/60">deposit(amount)</code> on NoirVault — vault pulls
+            USDCx and increments your encrypted vault balance. After this, engines can debit
+            collateral from your vault when you submit orders.
           </li>
         </ol>
         <div className="text-[12px] text-noir-cream/50 pt-2 border-t border-white/[0.04]">

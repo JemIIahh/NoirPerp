@@ -14,6 +14,32 @@ solved design decisions; give future agents full context.
 
 ## 2026-05-07
 
+### Frontend: full UI smoke + onboarding flow now works end-to-end on live Sepolia
+
+Carrying forward yesterday's compliance self-serve work: a new user can now go from "fresh wallet, no test funds, not allowlisted" to "settled FHE pair-match position" entirely through the dApp UI, with no admin intervention. Verified live 2026-05-07 — order #6 (long, owner `0xB86f43…9154`) + order #10 (short, admin) settled by the bot at tx `0x05632bed…d01c`, opening positions #4 and #5.
+
+The path took down four previously-blocking UI bugs:
+
+**1. SDK relayer-URL breaking change.** `@zama-fhe/relayer-sdk@0.4.1` (yesterday's pin) hardcodes `/v1/keyurl` for the Sepolia relayer; that endpoint returns 404 today (Zama migrated to `/v2`). The published `0.4.3` has the same bug. Only `0.5.0-alpha.3` ships a camelCase→snake_case adapter for the v2 response shape. Bumped frontend's pin to `^0.5.0-alpha.3`. Bot stays on `0.4.1` because `publicDecrypt` doesn't hit `/keyurl` and works fine.
+
+**2. Same SDK upgrade silently changed `encrypt()`'s return type from `0x${string}[]` to `Uint8Array[]`.** Our `useEncryptInput` hook returned the SDK output unchanged but typed as hex; viem then tried to encode a Uint8Array as an `address`-shaped contract arg and threw `hex_.replace is not a function` (minified `hexToBytes(hexString)` getting a non-string). Fix: convert at the hook boundary using viem's `bytesToHex` so the rest of the app keeps the hex-string contract.
+
+**3. WASM init wasn't being called + relative-URL resolution kept landing on Vite's SPA fallback.** The SDK requires `await sdk.initSDK()` before `createInstance()`; without it, `__wbindgen_malloc` is undefined and the SDK helpfully wraps the WASM-not-loaded error as "Impossible to fetch public key: wrong relayer url". Adding `initSDK()` was step one. Step two: the SDK's default `new URL('tfhe_bg.wasm', import.meta.url)` resolved to a path Vite's dev server didn't serve (returning the SPA index.html, hence the famous `expected magic word, found 3c 21 44 4f` — `3c21444f` = `<!DO`). Fix: copy the two WASM blobs to `frontend/public/` at install time and pass their absolute root URLs explicitly to `initSDK({ tfheParams: '/tfhe_bg.wasm', kmsParams: '/kms_lib_bg.wasm' })`.
+
+**4. Faucet flow stopped at "have USDCx", not "ready to trade".** Engines debit collateral from the NoirVault, not from the user's USDCx wallet balance directly. The original 3-step Faucet (mint underlying → approve cUSDCMock → wrap into USDCx) left the user with USDCx-in-wallet and a zero vault deposit, so the next click to Trade or Darkpool reverted at `safeSub` underflow on the empty encrypted vault balance. Extended Faucet to 5 steps: + setOperator(NoirVault, max) on cUSDCMock + NoirVault.deposit(amount). Steps 2 (approve) and 4 (operator) are conditionally skipped on repeat clicks via `useReadContract` reads of the relevant getters. New "Vault deposit: Funded / Empty" Stat card mirrors the underlying-balance + allowance cards already there.
+
+**Files**: `frontend/src/lib/relayer.ts`, `frontend/src/hooks/useEncrypt.ts`, `frontend/src/pages/Faucet.tsx`, `frontend/package.json` + `frontend/package-lock.json` (SDK pin bump), `frontend/public/tfhe_bg.wasm` + `frontend/public/kms_lib_bg.wasm` (5MB WASM blobs copied from `node_modules/@zama-fhe/relayer-sdk/lib/`).
+
+**Operational extras**:
+
+- `compliance-backend/data/allowlist.json`: gained 2 more addresses via the new self-serve `/self-serve/add` endpoint during live UI testing — `0x70AF0623…71EF` and `0xB86f4318…9154` (the latter is relayer C's wallet; user happened to use it as the buyer in the smoke test). Both got their compliance proof on-chain via the backend's autonomous `Compliance.updateRoot` calls without any curl.
+- `contracts/scripts/poke-cancel.ts` — new ops script. `PK=<0x...> ORDER=<id> npx hardhat run scripts/poke-cancel.ts --network sepolia` cancels a pair-eligible darkpool order from its owner; refund flows through normally. Used after the smoke test to clean up four leftover orders the user accidentally over-clicked. Mirrors the shape of the other `poke-*.ts` scripts.
+- Two unused devDeps in `frontend/package.json` (`vite-plugin-wasm`, `vite-plugin-top-level-await`) were added during diagnosis when the WASM-load problem was misdiagnosed as a Vite-side issue. Confirmed not needed (the `public/` + explicit-URL approach makes them redundant) but left in deps to avoid another round of churn — net cost is ~50KB of `node_modules`. Cleanup is a one-line follow-up: `npm uninstall vite-plugin-wasm vite-plugin-top-level-await`.
+
+**Outstanding (deferred)**: oracle-relayer service intermittently fails to commit ETH price (relayer A's `submitPrice` reverts with `status=0, gasUsed=29017, data=null`, while the same call from a Hardhat console with the same private key succeeds instantly). Diagnosed during today's test — bot's `runMatchTick` correctly stale-skip-loops while the oracle stays uncommitted, but the user-visible effect is "match settles in ~5s once oracle is fresh, but oracle freshness windows are intermittent". Workaround for tonight's testing: manually push a fresh ETH commit via Hardhat console (`oracle.connect(A).submitPrice(2, price, t)` + same from B) when needed. Real fix is in the relayer service code (likely the `t = Math.floor(Date.now()/1000)` timestamp computation drifting too old by tx-mine time, causing the contract's `block.timestamp > pendingTimestamp + 90` check to fire on the second relayer's commit attempt).
+
+---
+
 ### Compliance self-serve enrollment endpoint (testnet) — closes the judge-onboarding wall
 
 Identified the load-bearing UX gap for hackathon judging: connecting any wallet that isn't pre-allowlisted shows "Wallet not on the compliance allowlist" with no way forward — the only path was admin-side curl + sync-root tx. With three addresses ever added (Hardhat default, admin, trader B), every external user hits a wall.

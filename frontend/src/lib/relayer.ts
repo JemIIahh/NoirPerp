@@ -19,10 +19,18 @@ export async function getRelayerInstance(deployment: Deployment) {
     return instance;
   }
   const sdk = await import("@zama-fhe/relayer-sdk/web");
-  // `network` accepts an EIP-1193 provider or a JSON-RPC URL string.
-  // SepoliaConfig / MainnetConfig supply the preset contract addresses.
+  // Must run before createInstance(). WASM blobs are copied to /public/
+  // at install time and we pass explicit URLs to bypass the SDK's
+  // relative-URL heuristic (which lands on Vite's SPA fallback in dev,
+  // returning index.html — `<!DO…` — instead of the WASM bytes).
+  await sdk.initSDK({ tfheParams: "/tfhe_bg.wasm", kmsParams: "/kms_lib_bg.wasm" });
+  // Use the V2 preset: Zama's testnet relayer migrated /v1/* → /v2/*
+  // (verified 2026-05-07 — /v1/keyurl returns 404, /v2/keyurl returns 200).
+  // SepoliaConfigV2 differs from SepoliaConfig only by `relayerUrl`
+  // (`.../v2` vs the unversioned base which the SDK's V1 helpers append
+  // `/v1` to). Mainnet preset stays as-is until we hit the same gap there.
   const preset =
-    deployment.chainId === 11155111 ? sdk.SepoliaConfig : sdk.MainnetConfig;
+    deployment.chainId === 11155111 ? sdk.SepoliaConfigV2 : sdk.MainnetConfig;
   instance = await sdk.createInstance({
     ...preset,
     network: import.meta.env.VITE_RPC_URL ?? "http://127.0.0.1:8545",
