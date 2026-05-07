@@ -7,7 +7,7 @@ import {
 import clsx from "clsx";
 import { useComplianceProof, useComplianceHealth, useSelfServeAdd } from "../hooks/useCompliance";
 import { WalletGate } from "../components/WalletGate";
-import { Card, SectionHeader, Badge, Spinner, Stat } from "../components/ui";
+import { Card, SectionHeader, Badge, Spinner, StatStripCell } from "../components/ui";
 import { Button } from "../components/Form";
 import { shortAddr } from "../lib/format";
 
@@ -131,9 +131,11 @@ function Inner() {
         </div>
       </Card>
 
-      {/* ---------- Connected address + metrics row ------------------- */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr_1fr] gap-3">
-        <Card className="p-5 group hover:border-white/15 transition-colors">
+      {/* ---------- Connected address + metrics — console strip ------ */}
+      <div
+        className="console rounded-md overflow-hidden grid grid-cols-1 lg:grid-cols-[1.4fr_1fr_1fr] divide-y lg:divide-y-0 lg:divide-x divide-noir-cream/[0.06] animate-fade-up [animation-delay:60ms]"
+      >
+        <div className="p-5 min-w-0">
           <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-noir-cream/45 mb-3">
             Connected address
           </div>
@@ -141,16 +143,16 @@ function Inner() {
             <code className="font-mono text-[13px] text-noir-cream break-all">{address}</code>
             {address && <CopyButton text={address} label="Copy" />}
           </div>
-        </Card>
+        </div>
 
-        <Stat
+        <StatStripCell
           label="Merkle root"
           accent="neutral"
           icon={<Hash size={13} />}
           value={health ? <span className="font-mono text-[18px]">{shortAddr(health.root)}</span> : undefined}
           hint="Committed on-chain via Compliance.updateRoot"
         />
-        <Stat
+        <StatStripCell
           label="Allowlist size"
           accent="mint"
           icon={<Activity size={13} />}
@@ -159,12 +161,12 @@ function Inner() {
         />
       </div>
 
-      {/* ---------- Proof JSON ---------------------------------------- */}
+      {/* ---------- Proof JSON — console block, schematic frame ------- */}
       {allowlisted && proof && (
-        <Card className="overflow-hidden animate-fade-up [animation-delay:80ms]">
-          <div className="flex items-center justify-between gap-3 px-6 py-5 border-b border-white/[0.05]">
+        <div className="console rounded-md overflow-hidden animate-fade-up [animation-delay:80ms]">
+          <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-noir-cream/[0.08]">
             <div className="flex items-center gap-3.5">
-              <div className="h-10 w-10 rounded-xl bg-noir-accent/[0.10] border border-noir-accent/30 flex items-center justify-center backdrop-blur-md">
+              <div className="h-10 w-10 rounded-md bg-noir-accent/[0.08] border border-noir-accent/30 flex items-center justify-center">
                 <GitBranch size={15} className="text-noir-accent" />
               </div>
               <div>
@@ -179,7 +181,7 @@ function Inner() {
           <pre className="px-6 py-5 text-[12px] font-mono text-noir-cream/70 leading-relaxed overflow-x-auto bg-black/40">
 {JSON.stringify(proof.proof, null, 2)}
           </pre>
-        </Card>
+        </div>
       )}
 
       <div className="flex items-start gap-2.5 text-[11px] text-noir-cream/45 rounded-xl p-3.5 border border-white/[0.05] bg-white/[0.02] backdrop-blur-md">

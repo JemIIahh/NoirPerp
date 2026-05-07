@@ -7,7 +7,7 @@ import {
 import { useState } from "react";
 import { WalletGate } from "../components/WalletGate";
 import { EncryptedValue } from "../components/EncryptedValue";
-import { Card, SectionHeader, Badge, EmptyState, Stat } from "../components/ui";
+import { Card, SectionHeader, Badge, EmptyState, StatStripCell } from "../components/ui";
 import { useDeployment } from "../hooks/useDeployment";
 import { useVaultBalance } from "../hooks/useEncryptedBalance";
 import { usePositions } from "../hooks/usePositions";
@@ -56,9 +56,10 @@ function Inner() {
       {/* ============ Identity hero ============ */}
       <IdentityHero address={address} positionCount={positions.length} />
 
-      {/* ============ Balance stats: gas ETH + 3 encrypted ============ */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat
+      {/* ============ Balance stats: gas ETH + 3 encrypted, console strip
+                       hairline-divided cells, single sharp frame ============ */}
+      <div className="console rounded-md overflow-hidden grid grid-cols-1 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-noir-cream/[0.06] animate-fade-up [animation-delay:60ms]">
+        <StatStripCell
           label="Gas · ETH"
           accent="amber"
           icon={<Fuel size={13} />}
@@ -71,7 +72,7 @@ function Inner() {
           }
           hint={`Native ${deployment?.network === "sepolia" ? "Sepolia ETH" : "Hardhat ETH"} · plaintext`}
         />
-        <Stat
+        <StatStripCell
           label={`Wallet · ${deployment?.network === "sepolia" ? "cUSDCMock" : "USDCx"}`}
           accent="mint"
           icon={<Wallet size={13} />}
@@ -83,7 +84,7 @@ function Inner() {
           }
           hint="ERC-7984 confidential token"
         />
-        <Stat
+        <StatStripCell
           label="Vault balance"
           accent="neutral"
           icon={<Database size={13} />}
@@ -95,7 +96,7 @@ function Inner() {
           }
           hint="Held by NoirVault · encrypted"
         />
-        <Stat
+        <StatStripCell
           label="AMM shares"
           accent="neutral"
           icon={<Droplets size={13} />}
@@ -124,31 +125,33 @@ function Inner() {
             description="Open a perp on the Trade page or submit a dark order. Filled positions show up here with encrypted size, entry, and collateral."
           />
         ) : (
-          <Card className="overflow-hidden">
+          // Console-mode register: sharp frame, hairline header rule,
+          // hairline-divided rows. Reads as ledger, not as marketing card.
+          <div className="console rounded-md overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-[0.16em] text-noir-cream/40 border-b border-white/[0.05]">
-                    <th className="text-left py-4 pl-5 pr-3 font-medium">#</th>
-                    <th className="text-left py-4 px-3 font-medium">Market</th>
-                    <th className="text-left py-4 px-3 font-medium">Side</th>
-                    <th className="text-left py-4 px-3 font-medium">Size</th>
-                    <th className="text-left py-4 px-3 font-medium">Entry price</th>
-                    <th className="text-left py-4 px-3 pr-5 font-medium">Collateral</th>
+                  <tr className="text-[10px] uppercase tracking-[0.18em] text-noir-cream/45 border-b border-noir-cream/[0.08]">
+                    <th className="text-left py-3.5 pl-5 pr-3 font-medium">#</th>
+                    <th className="text-left py-3.5 px-3 font-medium">Market</th>
+                    <th className="text-left py-3.5 px-3 font-medium">Side</th>
+                    <th className="text-left py-3.5 px-3 font-medium">Size</th>
+                    <th className="text-left py-3.5 px-3 font-medium">Entry price</th>
+                    <th className="text-left py-3.5 px-3 pr-5 font-medium">Collateral</th>
                   </tr>
                 </thead>
                 <tbody>
                   {positions.map((p, idx) => (
                     <tr
                       key={p.id.toString()}
-                      className={`group border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors ${idx === positions.length - 1 ? "border-b-0" : ""}`}
+                      className={`group hover:bg-white/[0.02] transition-colors ${idx > 0 ? "border-t border-noir-cream/[0.05]" : ""}`}
                     >
                       <td className="py-4 pl-5 pr-3 font-mono text-noir-cream/40 text-[12px]">
                         {p.id.toString()}
                       </td>
                       <td className="py-4 px-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-white/[0.08] to-white/[0.02] border border-white/10 flex items-center justify-center text-[10px] font-semibold text-noir-cream font-display">
+                          <div className="h-8 w-8 rounded-md bg-white/[0.03] border border-white/10 flex items-center justify-center text-[10px] font-semibold text-noir-cream/85 font-display">
                             {marketById(p.marketId)?.symbol ?? "?"}
                           </div>
                           <span className="text-noir-cream font-medium font-display text-[13px] tracking-tight">
@@ -188,7 +191,7 @@ function Inner() {
                 </tbody>
               </table>
             </div>
-          </Card>
+          </div>
         )}
       </div>
     </div>

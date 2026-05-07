@@ -1,6 +1,6 @@
 import { Link, NavLink } from "react-router-dom";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { LineChart, Droplets, EyeOff, Wallet, ShieldCheck, AlertTriangle, Coins } from "lucide-react";
+import { LineChart, Droplets, EyeOff, Wallet, ShieldCheck, AlertTriangle, Coins, BookOpen } from "lucide-react";
 import clsx from "clsx";
 
 const NAV = [
@@ -10,6 +10,7 @@ const NAV = [
   { to: "/portfolio",  label: "Portfolio",  icon: Wallet },
   { to: "/compliance", label: "Compliance", icon: ShieldCheck },
   { to: "/faucet",     label: "Faucet",     icon: Coins },
+  { to: "/docs",       label: "Docs",       icon: BookOpen },
 ];
 
 export function Header() {

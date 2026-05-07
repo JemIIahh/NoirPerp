@@ -24,11 +24,12 @@ export default {
           white:   "#f3ede0",
           cream:   "#f3ede0",
 
-          // Brand accent + neighbors. Mint-teal — replaces the prior
-          // violet palette. Token names kept stable so all existing
-          // class refs (text-noir-accent, bg-noir-accent, ...) continue
-          // to work; the legacy `violet` token now holds the deeper
-          // mint variant used for hover/active states.
+          // Brand accent + neighbors. Zama yellow — adopted across the
+          // entire UI 2026-05-07 (replacing the prior mint-teal palette).
+          // Token names kept stable so all existing class refs
+          // (text-noir-accent, bg-noir-accent, ...) continue to work;
+          // the legacy `violet` token now holds the deeper-yellow variant
+          // used for hover/active states.
           accent:  "#5eead4",
           accent2: "#99f6e4",
           violet:  "#2dd4bf",
@@ -37,6 +38,14 @@ export default {
           green:   "#3ddc84",
           red:     "#ff5c5c",
           amber:   "#f5b041",
+        },
+        // `zama` kept as an alias of noir.accent for any callsite that
+        // already uses it (Docs page, Badge tone="zama"). Same value as
+        // noir.accent — both resolve to the Zama yellow now used app-wide.
+        zama: {
+          DEFAULT: "#5eead4",
+          soft:    "#99f6e4",
+          deep:    "#2dd4bf",
         },
       },
       fontFamily: {

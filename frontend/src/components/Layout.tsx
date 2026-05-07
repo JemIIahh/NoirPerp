@@ -49,34 +49,22 @@ export function Layout() {
 }
 
 // ---------- Scene backdrop ------------------------------------------------
-// Cream-warm noir canvas. Mirrors the landing page: deep noir base, a
-// barely-there cream warmth, dotted grid in cream, and one small mint
-// orb tucked off-screen the way the landing globe carries a single mint
-// orbital ring. No mint background washes — the canvas should read as
-// noir + cream first, accents second.
+// Subpages run quieter than the landing. Replaced the previous
+// aurora/cream-orb backdrop with a dim starfield + cosmic fade — three
+// very-low-opacity nebula gradients give a sense of depth, ~60 static
+// pinpoints scatter the field, and 5 brighter stars twinkle slowly on
+// top. Vignette stays so foreground content reads against the canvas.
 function SceneBackdrop() {
   return (
     <div aria-hidden className="fixed inset-0 z-0 pointer-events-none">
-      {/* Cream warmth from the top — replaces the prior mint top-wash. */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(243,237,224,0.04),transparent_60%)]" />
+      {/* Dim cosmic fade + scattered stars. */}
+      <div className="absolute inset-0 starfield" />
 
-      {/* Aurora — cream-dominant, animated. */}
-      <div className="absolute inset-0 aurora opacity-80" />
-
-      {/* Floating orbs — two cream + one small dimmed mint, mirroring
-          the landing globe's quiet mint orbital accent against its
-          predominantly cream/noir presence. */}
-      <div className="orb orb-cream     orb-float-1 -top-40 -left-32 w-[520px] h-[520px]" />
-      <div className="orb orb-cream-dim orb-float-2  top-1/3 -right-32 w-[460px] h-[460px]" />
-      <div className="orb orb-mint      orb-float-3 -bottom-24 left-1/2 w-[260px] h-[260px] opacity-50" />
-
-      {/* Faint cream grid, masked to fade. */}
-      <div
-        className="absolute inset-0 bg-grid-dots opacity-[0.4] [mask-image:radial-gradient(ellipse_at_center,black_25%,transparent_80%)]"
-      />
+      {/* A handful of brighter twinkling stars layered on top. */}
+      <div className="absolute inset-0 starfield-twinkle" />
 
       {/* Vignette so content reads against the canvas. */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(5,5,7,0.6)_85%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(5,5,7,0.7)_88%)]" />
     </div>
   );
 }

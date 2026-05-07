@@ -14,6 +14,52 @@ solved design decisions; give future agents full context.
 
 ## 2026-05-07
 
+### Frontend: new `/docs` "How it works" page + starfield backdrop on subpages
+
+Two user-facing UI additions, plus assorted polish on existing pages.
+
+**`/docs` route + page** (`frontend/src/pages/Docs.tsx`, ~530 lines):
+
+A diagram-first walkthrough of NoirPerp aimed at first-time visitors and judges. Iterated through three drafts based on feedback ("too complicated" → "too brief" → "too wordy") before landing on the current shape: visuals carry the meaning, captions are one line each.
+
+Sections, top to bottom:
+
+- **Hero** — single statement ("Submit an encrypted order. The chain settles it without anyone seeing the *numbers*.") + a floating lock illustration with drifting hex-string particles around it.
+- **Step 1 — Verify your wallet**: animated SVG of a Merkle tree with your-address leaf glowing + the proof path lighting up to root.
+- **Step 2 — Get USDCx**: animated SVG with three boxes (USDC → USDCx → Vault) and a coin dot that travels along the path on a 3.5s loop.
+- **Step 3 — Submit an encrypted order**: 3 input fields auto-flip every 2.4s between plaintext (`size: 1`) and ciphertext (`0x9f3e…02ab`) with a state label.
+- **Step 4 — Reveal or close**: interactive position card where clicking "Reveal" transitions ciphertext to plaintext (size, entry, P&L), with the P&L glowing mint when revealed.
+- **Privacy split**: 6 encrypted fields (mint pills) vs 6 visible fields (cream pills), staggered fade-in. No paragraphs.
+- **Async pipeline**: 5 numbered nodes (Submit → Compute → Decrypt → Callback → Settle) connected with arrows + a mint dot that travels through them on a 5s loop. Last node pulses.
+- **Resources**: 4 link cards (GitHub README, Zama FHEVM docs, Sepolia explorer, ERC-7984).
+
+Wired into `Header.tsx` as a new nav entry (BookOpen icon, between Faucet and the connect pill) and `App.tsx` as a `/docs` route.
+
+**Starfield backdrop** (`frontend/src/index.css` + `frontend/src/components/Layout.tsx`):
+
+Replaced the previous aurora + cream-orb + dotted-grid SceneBackdrop with a dim cosmic field. Two new CSS classes:
+
+- `.starfield`: noir-black base + 3 very-low-opacity (2.5–4.5%) nebula radial-gradient blobs (mint-tinted top-left, deep-violet top-right, mint bottom-center for sense of depth) + ~60 static cream pinpoint stars at varied alpha (0.30–0.85) and sizes (1px / 1.5px). `background-attachment: fixed` so stars stay put while content scrolls.
+- `.starfield-twinkle`: 5 brighter stars layered on top with a 6s `twinkle` keyframe animation (opacity 0.85 ↔ 0.30) for subtle motion.
+
+`Layout.tsx`'s `SceneBackdrop` now stacks the starfield + twinkle layer + a center-out vignette (`rgba(5,5,7,0.7)` outer at 88%) so foreground content reads cleanly against the canvas. Home page (`/`) is unchanged — its globe scene was always its own surface.
+
+**Brand-swap experiment, reverted**:
+
+Briefly tried swapping `noir.accent` from mint (`#5eead4`) to Zama yellow (`#FFDE0B`) app-wide on user request, then reverted to mint after a follow-up. Two artifacts remain in the codebase from that fork, harmless and intentionally kept:
+
+- `tailwind.config.js` keeps a `zama` color token aliased to the same mint values as `noir.accent`. Any future callsite that wants a Zama-flavored alias has it; doesn't conflict with anything.
+- Misleading historical token names (`mint`, `glow-violet`, `orb-mint`, etc.) all resolve to the current accent color via tokens, but the names predate this color iteration. Not worth a rename sweep.
+
+**Polish on existing pages** (mostly mechanical / typography refinements, not behavior changes):
+
+- `Compliance.tsx`: status hero gained the self-serve-aware "Get verified (testnet)" button (already shipped 2026-05-06); the connected-address row migrated from individual `<Stat>` cards to `<StatStripCell>` so they sit in a single hairline-divided console strip instead of three separate cards. Tighter visual rhythm with the rest of the page.
+- `Darkpool.tsx` / `Portfolio.tsx` / `Trade.tsx`: tweaks to the "What gets encrypted" / "Field visibility" pedagogical cards — switched from glass to console mode (flat, hairline border, no blur) so the schematic-visibility readout reads as a data summary instead of a marketing surface. Swapped `Stat` callouts for `StatStripCell` in a few places where they share a row. Pure visual; no contract or hook changes.
+
+**Files**: `frontend/src/pages/Docs.tsx` (new), `frontend/src/components/Header.tsx`, `frontend/src/components/Layout.tsx`, `frontend/src/components/ui.tsx`, `frontend/src/App.tsx`, `frontend/src/index.css`, `frontend/tailwind.config.js`, `frontend/src/pages/{Compliance,Darkpool,Portfolio,Trade}.tsx`. Frontend `npx tsc --noEmit` clean.
+
+---
+
 ### oracle-relayer: refresh `t` per-market + parallelize A+B → ETH commits stay fresh continuously
 
 **Root cause**: `submitTick` captured `t = Math.floor(Date.now()/1000)` once at the top of the function, then reused that value across **all** 6 sub-txs (3 markets × 2 relayers). With ~14s tx confirmation on Sepolia, by the time the 4th–6th tx mined, `t` was 50–80 s behind `block.timestamp`. The contract's `block.timestamp > pendingTimestamp + stalenessSeconds(90)` check then fired when the second relayer tried to commit against the first relayer's already-stale pending — `PendingStale` revert (`0xf5489694`), 2-of-3 quorum never reaches, ETH oracle stuck stale for minutes at a time.

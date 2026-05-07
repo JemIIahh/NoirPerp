@@ -201,15 +201,19 @@ function Inner() {
             </div>
           </Card>
 
-          {/* Order summary */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/[0.05]">
-              <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-noir-cream/45">
-                Order summary
+          {/* Order summary — console mode: schematic data block, no glass.
+              Hairline header + dividerless dense rows so it reads as a
+              terminal-style preview, not a marketing card. */}
+          <div className="console rounded-md p-5">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-noir-cream/[0.05]">
+              <span className="text-[10px] uppercase tracking-[0.22em] text-noir-cream/45 font-medium">
+                Order preview
               </span>
-              <span className="text-[10px] text-noir-cream/30 font-mono">preview</span>
+              <span className="text-[10px] text-noir-cream/30 font-mono tracking-wider">
+                summary
+              </span>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               <KeyValue label="Market" value={market ? `${market.symbol}/USD` : "—"} mono />
               <KeyValue
                 label="Side"
@@ -237,7 +241,7 @@ function Inner() {
                 hint mono
               />
             </div>
-          </Card>
+          </div>
         </div>
 
         {/* ---------- Right: positions ------------------------------------ */}
@@ -263,67 +267,73 @@ function Inner() {
               description="Submit your first encrypted order on the left. Positions appear here as soon as the tx confirms."
             />
           ) : (
-            <div className="space-y-3">
+            // Console mode: rows in a single sharp-cornered tape, hairline
+            // dividers between positions. Reads as a register / order book
+            // line item, not as a marketing card. The lounge order form
+            // on the left and this console list on the right intentionally
+            // sit in two different visual modes of the same product.
+            <div className="console rounded-md overflow-hidden">
               {positions.map((p, idx) => (
-                <Card
+                <div
                   key={p.id.toString()}
-                  interactive
-                  className="p-5 animate-fade-up overflow-hidden"
+                  className={clsx(
+                    "relative px-5 py-4 flex items-center gap-4 hover:bg-white/[0.02] transition-colors animate-fade-up",
+                    idx > 0 && "border-t border-noir-cream/[0.05]",
+                  )}
                   style={{ animationDelay: `${idx * 60}ms` } as React.CSSProperties}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-white/[0.08] to-white/[0.02] border border-white/10 flex items-center justify-center text-[10px] font-semibold text-noir-cream font-display">
-                          {marketById(p.marketId)?.symbol ?? "?"}
-                        </div>
-                        <div>
-                          <div className="text-[15px] font-medium text-noir-cream font-display tracking-tight">
-                            {marketById(p.marketId)?.symbol}/USD
-                            <span className="text-noir-cream/30 font-mono font-normal ml-2 text-[12px]">
-                              #{p.id.toString()}
-                            </span>
-                          </div>
-                          <Badge tone={p.isLong ? "green" : "red"} className="mt-1.5">
-                            {p.isLong ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                            {p.isLong ? "Long" : "Short"}
-                          </Badge>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-xs">
-                        <PositionField
-                          label="Size"
-                          value={
-                            <EncryptedValue
-                              handle={p.sizeHandle}
-                              contractAddr={deployment?.contracts.NoirVault}
-                              compact
-                            />
-                          }
-                        />
-                        <PositionField
-                          label="Collateral"
-                          value={
-                            <EncryptedValue
-                              handle={p.collateralHandle}
-                              contractAddr={deployment?.contracts.NoirVault}
-                              compact
-                            />
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => onClose(p.id)}
-                    >
-                      Close
-                    </Button>
+                  <div className="h-10 w-10 rounded-md bg-white/[0.03] border border-white/10 flex items-center justify-center text-[10px] font-semibold text-noir-cream/85 font-display shrink-0">
+                    {marketById(p.marketId)?.symbol ?? "?"}
                   </div>
-                </Card>
+
+                  <div className="min-w-0 w-32 sm:w-36 shrink-0">
+                    <div className="text-[13px] font-medium text-noir-cream font-display tracking-tight truncate">
+                      {marketById(p.marketId)?.symbol}/USD
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={clsx(
+                        "inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.12em] font-medium",
+                        p.isLong ? "text-noir-green" : "text-noir-red",
+                      )}>
+                        {p.isLong ? <TrendingUp size={9} /> : <TrendingDown size={9} />}
+                        {p.isLong ? "long" : "short"}
+                      </span>
+                      <span className="text-[10px] font-mono text-noir-cream/30">#{p.id.toString()}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 grid grid-cols-2 gap-4 min-w-0">
+                    <PositionField
+                      label="Size"
+                      value={
+                        <EncryptedValue
+                          handle={p.sizeHandle}
+                          contractAddr={deployment?.contracts.NoirVault}
+                          compact
+                        />
+                      }
+                    />
+                    <PositionField
+                      label="Collateral"
+                      value={
+                        <EncryptedValue
+                          handle={p.collateralHandle}
+                          contractAddr={deployment?.contracts.NoirVault}
+                          compact
+                        />
+                      }
+                    />
+                  </div>
+
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => onClose(p.id)}
+                    className="shrink-0"
+                  >
+                    Close
+                  </Button>
+                </div>
               ))}
             </div>
           )}
@@ -423,8 +433,14 @@ function MarketTicker({
   selected: number;
   onSelect: (id: number) => void;
 }) {
+  // Console mode: a single contiguous tape strip with hairline-divided
+  // cells. Selection is signalled by a 2px mint left edge + a soft tint —
+  // not a halo or border glow. The tape reads as data, not as buttons.
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 animate-fade-up [animation-delay:60ms]">
+    <div
+      className="console rounded-md overflow-hidden grid grid-cols-1 animate-fade-up [animation-delay:60ms]"
+      style={{ gridTemplateColumns: `repeat(${TRADEABLE_MARKETS.length}, minmax(0, 1fr))` }}
+    >
       {TRADEABLE_MARKETS.map((m, idx) => {
         const r = prices?.[idx];
         const tuple = r?.status === "success" ? (r.result as PriceTuple) : undefined;
@@ -435,39 +451,40 @@ function MarketTicker({
             type="button"
             onClick={() => onSelect(m.id)}
             className={clsx(
-              "group relative flex items-center justify-between p-4 rounded-2xl text-left transition-all duration-200 overflow-hidden glass",
+              "relative flex items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors group",
+              idx > 0 && "sm:border-l border-t sm:border-t-0 border-noir-cream/[0.06]",
               isSelected
-                ? "border-noir-accent/40 shadow-[0_0_32px_-8px_rgba(94,234,212,0.4)]"
-                : "glass-hover",
+                ? "bg-noir-accent/[0.04]"
+                : "hover:bg-white/[0.02]",
             )}
           >
             {isSelected && (
-              <div
-                aria-hidden
-                className="absolute inset-0 bg-gradient-to-br from-noir-accent/[0.08] to-transparent pointer-events-none"
-              />
+              <span aria-hidden className="absolute inset-y-0 left-0 w-[2px] bg-noir-accent" />
             )}
-            <div className="relative flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <div className={clsx(
-                "h-11 w-11 rounded-xl flex items-center justify-center text-[11px] font-semibold font-display border transition-colors",
+                "h-9 w-9 rounded-md flex items-center justify-center text-[10px] font-semibold font-display border shrink-0 transition-colors",
                 isSelected
-                  ? "bg-noir-accent/15 border-noir-accent/40 text-noir-accent"
-                  : "bg-white/[0.04] border-white/10 text-noir-cream/80",
+                  ? "bg-noir-accent/[0.10] border-noir-accent/30 text-noir-accent"
+                  : "bg-white/[0.03] border-white/10 text-noir-cream/75",
               )}>
                 {m.symbol}
               </div>
-              <div>
-                <div className="text-[14px] font-medium text-noir-cream font-display tracking-tight">
+              <div className="min-w-0">
+                <div className={clsx(
+                  "text-[13px] font-medium font-display tracking-tight truncate",
+                  isSelected ? "text-noir-cream" : "text-noir-cream/85",
+                )}>
                   {m.symbol}-USD
                 </div>
-                <div className="text-[11px] text-noir-cream/40 mt-0.5">{m.name} perp</div>
+                <div className="text-[10px] text-noir-cream/40 mt-0.5 truncate">{m.name} perp</div>
               </div>
             </div>
-            <div className="relative text-right">
+            <div className="text-right shrink-0">
               {tuple ? (
                 <PriceInline price={tuple} large />
               ) : (
-                <div className="text-sm text-noir-cream/30 font-mono">—</div>
+                <div className="text-[12px] text-noir-cream/30 font-mono">—</div>
               )}
             </div>
           </button>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAccount, useWriteContract } from "wagmi";
+import clsx from "clsx";
 import {
   EyeOff, Lock, TrendingUp, TrendingDown, AlertCircle,
   Info, X, ChevronRight, Fingerprint,
@@ -264,13 +265,15 @@ function Inner() {
             </div>
           </Card>
 
-          {/* What gets encrypted — pedagogical card */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/[0.05]">
-              <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-noir-cream/45">
+          {/* What gets encrypted — console mode: schematic visibility
+              ledger, sharp corners, hairline frame. Reads as a spec
+              table, not a marketing card. */}
+          <div className="console rounded-md p-5">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-noir-cream/[0.05]">
+              <span className="text-[10px] uppercase tracking-[0.22em] text-noir-cream/45 font-medium">
                 Field visibility
               </span>
-              <span className="text-[10px] text-noir-cream/30 font-mono">on-chain</span>
+              <span className="text-[10px] text-noir-cream/30 font-mono tracking-wider">on-chain</span>
             </div>
             <div className="space-y-1.5">
               <EncryptedRow label="Order size" />
@@ -279,7 +282,7 @@ function Inner() {
               <EncryptedRow label="Side · long/short" plaintext />
               <EncryptedRow label="Market id" plaintext />
             </div>
-          </Card>
+          </div>
         </div>
 
         {/* ---------- Right: active orders -------------------------------- */}
@@ -305,49 +308,51 @@ function Inner() {
               description="Encrypted orders appear here as soon as the tx confirms. Other traders see your row exists — but not the size, price, or value."
             />
           ) : (
-            <div className="space-y-3">
+            // Console mode: sharp-cornered tape of orders, hairline-divided
+            // rows. Each row reads as a register entry — symbol, side+id,
+            // P2P/Pool tag, three encrypted cells, cancel. Other traders
+            // see the row exists but not its contents.
+            <div className="console rounded-md overflow-hidden">
               {orders.map((o, idx) => (
-                <Card
+                <div
                   key={o.id.toString()}
-                  interactive
-                  className="p-5 animate-fade-up overflow-hidden"
+                  className={clsx(
+                    "px-5 py-4 flex items-center gap-4 hover:bg-white/[0.02] transition-colors animate-fade-up",
+                    idx > 0 && "border-t border-noir-cream/[0.05]",
+                  )}
                   style={{ animationDelay: `${idx * 60}ms` } as React.CSSProperties}
                 >
-                  <div className="flex items-start justify-between gap-4 mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-white/[0.08] to-white/[0.02] border border-white/10 flex items-center justify-center text-[10px] font-semibold text-noir-cream font-display">
-                        {marketById(o.marketId)?.symbol ?? "?"}
-                      </div>
-                      <div>
-                        <div className="text-[15px] font-medium text-noir-cream font-display tracking-tight">
-                          {marketById(o.marketId)?.symbol}/USD
-                          <span className="text-noir-cream/30 font-mono font-normal ml-2 text-[12px]">
-                            #{o.id.toString()}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-1.5">
-                          <Badge tone={o.isLong ? "green" : "red"}>
-                            {o.isLong ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                            {o.isLong ? "Long" : "Short"}
-                          </Badge>
-                          <Badge tone={o.pairMatchEligible ? "encrypted" : "neutral"}>
-                            {o.pairMatchEligible ? "P2P" : "Pool"}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      leadingIcon={<X size={12} />}
-                      onClick={() => onCancel(o.id)}
-                    >
-                      Cancel
-                    </Button>
+                  <div className="h-10 w-10 rounded-md bg-white/[0.03] border border-white/10 flex items-center justify-center text-[10px] font-semibold text-noir-cream/85 font-display shrink-0">
+                    {marketById(o.marketId)?.symbol ?? "?"}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs pt-4 border-t border-white/[0.05]">
+                  <div className="min-w-0 w-32 sm:w-36 shrink-0">
+                    <div className="text-[13px] font-medium text-noir-cream font-display tracking-tight truncate">
+                      {marketById(o.marketId)?.symbol}/USD
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={clsx(
+                        "inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.12em] font-medium",
+                        o.isLong ? "text-noir-green" : "text-noir-red",
+                      )}>
+                        {o.isLong ? <TrendingUp size={9} /> : <TrendingDown size={9} />}
+                        {o.isLong ? "long" : "short"}
+                      </span>
+                      <span className="text-[10px] font-mono text-noir-cream/30">#{o.id.toString()}</span>
+                    </div>
+                    <div className="mt-1.5">
+                      <span className={clsx(
+                        "inline-flex items-center text-[9px] uppercase tracking-[0.14em] font-medium px-1.5 py-0.5 rounded-sm border",
+                        o.pairMatchEligible
+                          ? "text-noir-accent border-noir-accent/30 bg-noir-accent/[0.05]"
+                          : "text-noir-cream/55 border-noir-cream/15 bg-white/[0.02]",
+                      )}>
+                        {o.pairMatchEligible ? "P2P" : "Pool"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 grid grid-cols-3 gap-4 min-w-0">
                     <OrderField
                       label="Size"
                       value={
@@ -379,7 +384,17 @@ function Inner() {
                       }
                     />
                   </div>
-                </Card>
+
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    leadingIcon={<X size={12} />}
+                    onClick={() => onCancel(o.id)}
+                    className="shrink-0"
+                  >
+                    Cancel
+                  </Button>
+                </div>
               ))}
             </div>
           )}

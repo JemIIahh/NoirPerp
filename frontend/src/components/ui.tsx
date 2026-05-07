@@ -106,12 +106,50 @@ export function Stat({ label, value, hint, icon, accent = "neutral", className }
   );
 }
 
+// ---------- StatStripCell -------------------------------------------------
+
+// Console-mode counterpart to <Stat>. Same anatomy (label, icon, value,
+// hint) but flat — no Card, no halo, no hover lift. Designed to live
+// inside a `.console` strip with hairline dividers between cells. Use
+// when stats sit in a dense data row instead of a marketing grid.
+export function StatStripCell({
+  label, value, hint, icon, accent = "neutral", className,
+}: StatProps) {
+  return (
+    <div className={clsx("p-5 min-w-0", className)}>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-noir-cream/45">
+          {label}
+        </span>
+        {icon && (
+          <span className={clsx(
+            "h-7 w-7 rounded-md border bg-white/[0.02] flex items-center justify-center",
+            ACCENT_BORDER[accent],
+            ACCENT_TEXT[accent],
+          )}>
+            {icon}
+          </span>
+        )}
+      </div>
+      <div className={clsx(
+        "text-[24px] font-semibold font-display tabular-nums leading-none tracking-[-0.02em] truncate",
+        accent === "neutral" ? "text-noir-cream" : ACCENT_TEXT[accent],
+      )}>
+        {value ?? <span className="text-noir-cream/30">—</span>}
+      </div>
+      {hint && <div className="mt-3 text-[11px] text-noir-cream/45 leading-relaxed">{hint}</div>}
+    </div>
+  );
+}
+
 // ---------- Badge / Pill --------------------------------------------------
 
 type BadgeTone = "neutral" | "mint" | "green" | "red" | "amber" | "encrypted";
 
 const BADGE_TONE: Record<BadgeTone, string> = {
   neutral:   "bg-white/[0.04] text-noir-cream/65 border-white/10",
+  // The "mint" name is historical — the noir.accent token now resolves
+  // to Zama yellow (#5eead4) since the 2026-05-07 brand swap.
   mint:      "bg-noir-accent/[0.10] text-noir-accent border-noir-accent/30",
   // green/red/amber kept for SEMANTIC use only:
   //   green = long position
@@ -150,11 +188,15 @@ export function SectionHeader({
   description?: ReactNode;
   action?: ReactNode;
 }) {
+  // Eyebrow is text-only in cream/dim. Mint chip pulled out — mint is
+  // reserved for encrypted-state, primary CTA, focus, and live indicators.
+  // The shimmer-text on the heading itself carries the mint accent at
+  // section-header altitude.
   return (
     <div className="flex items-start justify-between gap-6 animate-fade-up">
       <div className="min-w-0 flex-1">
         {eyebrow && (
-          <div className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.24em] text-noir-accent mb-4 px-2.5 py-1 rounded-full border border-noir-accent/25 bg-noir-accent/[0.05] backdrop-blur-md">
+          <div className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.26em] text-noir-cream/45 mb-5">
             {eyebrow}
           </div>
         )}
