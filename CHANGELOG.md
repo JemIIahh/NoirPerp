@@ -14,6 +14,41 @@ solved design decisions; give future agents full context.
 
 ## 2026-05-07
 
+### oracle-relayer: refresh `t` per-market + parallelize A+B → ETH commits stay fresh continuously
+
+**Root cause**: `submitTick` captured `t = Math.floor(Date.now()/1000)` once at the top of the function, then reused that value across **all** 6 sub-txs (3 markets × 2 relayers). With ~14s tx confirmation on Sepolia, by the time the 4th–6th tx mined, `t` was 50–80 s behind `block.timestamp`. The contract's `block.timestamp > pendingTimestamp + stalenessSeconds(90)` check then fired when the second relayer tried to commit against the first relayer's already-stale pending — `PendingStale` revert (`0xf5489694`), 2-of-3 quorum never reaches, ETH oracle stuck stale for minutes at a time.
+
+**Concrete proof on a real failed tx (`0x97d880b1…4704`)**:
+
+```
+block.timestamp at A's mine: 1778152608
+pendingTimestamp (B prior):  1778152507  ← from previous tick, 101 s old
+                             + 90        = 1778152597
+1778152608 > 1778152597     → TRUE → PendingStale revert
+```
+
+**Fix** (`oracle-relayer/src/relayer.ts`):
+
+1. Move `t = Math.floor(Date.now()/1000)` *inside* the per-market loop. Each market now uses a fresh wall-clock value; A submits with `t`, B with `t+1`. By mine-time, `t` is at most ~14 s behind `block.timestamp` rather than 50–80 s.
+2. A's and B's submissions for the same market now run via `Promise.all` instead of sequential awaits. They're different wallets, so no nonce conflicts. Halves wall-clock per market from ~28 s → ~14 s; total tick duration ~84 s → ~42 s. ETH stays committed for a much larger fraction of each cycle.
+
+**Test added** (`oracle-relayer/test/relayer.test.ts`): asserts B's timestamp is exactly A's + 1 for each market and that the per-market `t` is monotonically non-decreasing across the loop iterations. Locks in both invariants.
+
+**Verified live on Sepolia 2026-05-07** (210-second observation window, single relayer process, fresh restart):
+
+| Window | ETH submits OK | ETH submits failed | Cycle cadence |
+|---|---|---|---|
+| Pre-fix (today, before patch) | ~9 | ~11 | one full A+B commit per ~120 s, intermittent only |
+| Post-fix (this commit) | **12** | **0** | one full A+B commit per ~35–42 s, sustained |
+
+ETH `getPrice(2).fresh` returned `true` continuously through the observation window post-fix; pre-fix it was `false` for ~5 minutes at a stretch. Bot's `submitMatchPair` now lands first try in nearly every case instead of cycling through `oracle-stale skip` loops.
+
+**SOL still fails as expected** — Sepolia has no Chainlink SOL/USD feed; the relayer falls back to `mockPrice` which jitters per tick, so the deviation-tolerance check fails. Out of scope; SOL is hidden in the frontend already (Phase 11+ note from 2026-05-04). 12 SOL failures in the same observation window — pure noise, doesn't block anything.
+
+**Files**: `oracle-relayer/src/relayer.ts`, `oracle-relayer/test/relayer.test.ts`. 7/7 oracle-relayer tests pass. Build clean.
+
+---
+
 ### Frontend: full UI smoke + onboarding flow now works end-to-end on live Sepolia
 
 Carrying forward yesterday's compliance self-serve work: a new user can now go from "fresh wallet, no test funds, not allowlisted" to "settled FHE pair-match position" entirely through the dApp UI, with no admin intervention. Verified live 2026-05-07 — order #6 (long, owner `0xB86f43…9154`) + order #10 (short, admin) settled by the bot at tx `0x05632bed…d01c`, opening positions #4 and #5.
