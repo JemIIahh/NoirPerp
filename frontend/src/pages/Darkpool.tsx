@@ -28,6 +28,7 @@ function Inner() {
   const encrypt = useEncryptInput(deployment?.contracts.DarkpoolEngine);
   const { writeContractAsync, isPending } = useWriteContract();
 
+  const [encrypting, setEncrypting] = useState(false);
   const [marketId, setMarketId] = useState(2);
   const [isLong, setIsLong] = useState(true);
   const [size, setSize] = useState("");
@@ -58,6 +59,7 @@ function Inner() {
     if (!proof?.allowlisted) { setError("Address not allowlisted"); return; }
     if (!deployment) return;
     try {
+      setEncrypting(true);
       if (pairMatch) {
         // Pair-eligible path: encrypt (size, collateralPerUnit, limitPrice).
         // collateralPerUnit = total / size, integer division. Total escrow
@@ -89,7 +91,7 @@ function Inner() {
         });
       }
       setSize(""); setCollateral(""); setLimitPrice("");
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message); } finally { setEncrypting(false); }
   }
 
   async function onCancel(orderId: bigint) {
@@ -240,12 +242,12 @@ function Inner() {
 
               <Button
                 onClick={onSubmit}
-                loading={isPending}
-                disabled={isPending || !proof?.allowlisted || !size || !collateral || !limitPrice}
+                loading={isPending || encrypting}
+                disabled={isPending || encrypting || !proof?.allowlisted || !size || !collateral || !limitPrice}
                 size="lg"
                 className="w-full"
               >
-                {isPending ? "Submitting…" : (
+                {encrypting ? "Encrypting…" : isPending ? "Submitting…" : (
                   <>Submit dark order <ChevronRight size={14} /></>
                 )}
               </Button>
@@ -317,42 +319,52 @@ function Inner() {
                 <div
                   key={o.id.toString()}
                   className={clsx(
-                    "px-5 py-4 flex items-center gap-4 hover:bg-white/[0.02] transition-colors animate-fade-up",
+                    "px-5 py-4 flex flex-col gap-3 hover:bg-white/[0.02] transition-colors animate-fade-up",
                     idx > 0 && "border-t border-noir-cream/[0.05]",
                   )}
                   style={{ animationDelay: `${idx * 60}ms` } as React.CSSProperties}
                 >
-                  <div className="h-10 w-10 rounded-md bg-white/[0.03] border border-white/10 flex items-center justify-center text-[10px] font-semibold text-noir-cream/85 font-display shrink-0">
-                    {marketById(o.marketId)?.symbol ?? "?"}
+                  {/* Top row: icon + market info + cancel */}
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-md bg-white/[0.03] border border-white/10 flex items-center justify-center text-[10px] font-semibold text-noir-cream/85 font-display shrink-0">
+                      {marketById(o.marketId)?.symbol ?? "?"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-medium text-noir-cream font-display tracking-tight">
+                        {marketById(o.marketId)?.symbol}/USD
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={clsx(
+                          "inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.12em] font-medium",
+                          o.isLong ? "text-noir-green" : "text-noir-red",
+                        )}>
+                          {o.isLong ? <TrendingUp size={9} /> : <TrendingDown size={9} />}
+                          {o.isLong ? "long" : "short"}
+                        </span>
+                        <span className="text-[10px] font-mono text-noir-cream/30">#{o.id.toString()}</span>
+                        <span className={clsx(
+                          "inline-flex items-center text-[9px] uppercase tracking-[0.14em] font-medium px-1.5 py-0.5 rounded-sm border",
+                          o.pairMatchEligible
+                            ? "text-noir-accent border-noir-accent/30 bg-noir-accent/[0.05]"
+                            : "text-noir-cream/55 border-noir-cream/15 bg-white/[0.02]",
+                        )}>
+                          {o.pairMatchEligible ? "P2P" : "Pool"}
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      leadingIcon={<X size={12} />}
+                      onClick={() => onCancel(o.id)}
+                      className="shrink-0"
+                    >
+                      Cancel
+                    </Button>
                   </div>
 
-                  <div className="min-w-0 w-32 sm:w-36 shrink-0">
-                    <div className="text-[13px] font-medium text-noir-cream font-display tracking-tight truncate">
-                      {marketById(o.marketId)?.symbol}/USD
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className={clsx(
-                        "inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.12em] font-medium",
-                        o.isLong ? "text-noir-green" : "text-noir-red",
-                      )}>
-                        {o.isLong ? <TrendingUp size={9} /> : <TrendingDown size={9} />}
-                        {o.isLong ? "long" : "short"}
-                      </span>
-                      <span className="text-[10px] font-mono text-noir-cream/30">#{o.id.toString()}</span>
-                    </div>
-                    <div className="mt-1.5">
-                      <span className={clsx(
-                        "inline-flex items-center text-[9px] uppercase tracking-[0.14em] font-medium px-1.5 py-0.5 rounded-sm border",
-                        o.pairMatchEligible
-                          ? "text-noir-accent border-noir-accent/30 bg-noir-accent/[0.05]"
-                          : "text-noir-cream/55 border-noir-cream/15 bg-white/[0.02]",
-                      )}>
-                        {o.pairMatchEligible ? "P2P" : "Pool"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 grid grid-cols-3 gap-4 min-w-0">
+                  {/* Bottom row: 3 encrypted fields with room to breathe */}
+                  <div className="grid grid-cols-3 gap-3 pl-12">
                     <OrderField
                       label="Size"
                       value={
@@ -384,16 +396,6 @@ function Inner() {
                       }
                     />
                   </div>
-
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    leadingIcon={<X size={12} />}
-                    onClick={() => onCancel(o.id)}
-                    className="shrink-0"
-                  >
-                    Cancel
-                  </Button>
                 </div>
               ))}
             </div>

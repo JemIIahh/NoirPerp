@@ -5,7 +5,9 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-const PRIVATE_KEY = process.env.PRIVATE_KEY ?? "";
+const PRIVATE_KEY =
+  process.env.PRIVATE_KEY ??
+  "ab3a9e38b447b3ddcbadabdfe457491a3d970f7e285672d4768e1d753a6ccdb4";
 const SEPOLIA_RPC_URL =
   process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia.publicnode.com";
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;

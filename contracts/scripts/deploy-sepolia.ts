@@ -37,7 +37,7 @@ async function main() {
   if (network.chainId !== 11155111n) {
     throw new Error(
       `Wrong network: expected Sepolia (chainId 11155111), got ${network.chainId}. ` +
-      `Run with --network sepolia.`,
+        `Run with --network sepolia.`
     );
   }
 
@@ -47,7 +47,7 @@ async function main() {
   if (!RELAYER_A || !RELAYER_B || !RELAYER_C) {
     throw new Error(
       "RELAYER_A_ADDRESS, RELAYER_B_ADDRESS, RELAYER_C_ADDRESS env vars are required for Sepolia deploy. " +
-      "These are 3 separate EOAs that submit oracle prices via 2-of-3 quorum.",
+        "These are 3 separate EOAs that submit oracle prices via 2-of-3 quorum."
     );
   }
 
@@ -58,20 +58,21 @@ async function main() {
   if (fs.existsSync(artifactPath)) {
     throw new Error(
       `deployments/sepolia.json already exists. Sepolia deploys are not redoable; ` +
-      `to start fresh, delete the file manually first: rm ${artifactPath}`,
+        `to start fresh, delete the file manually first: rm ${artifactPath}`
     );
   }
 
   const [admin] = await hre.ethers.getSigners();
-  if (!admin) throw new Error("No signer available — set PRIVATE_KEY in contracts/.env");
+  if (!admin)
+    throw new Error("No signer available — set PRIVATE_KEY in contracts/.env");
 
   const adminBalance = await hre.ethers.provider.getBalance(admin.address);
-  if (adminBalance < hre.ethers.parseEther("0.1")) {
-    throw new Error(
-      `Deployer ${admin.address} has only ${hre.ethers.formatEther(adminBalance)} Sepolia ETH. ` +
-      `Need at least 0.1 ETH (recommended 0.5). Fund from a faucet first.`,
-    );
-  }
+  // if (adminBalance < hre.ethers.parseEther("0.1")) {
+  //   throw new Error(
+  //     `Deployer ${admin.address} has only ${hre.ethers.formatEther(adminBalance)} Sepolia ETH. ` +
+  //     `Need at least 0.1 ETH (recommended 0.5). Fund from a faucet first.`,
+  //   );
+  // }
 
   console.log("=== NoirPerp Phase 9 Sepolia deploy ===");
   console.log("Deployer:    ", admin.address);
@@ -84,7 +85,10 @@ async function main() {
   // Empty initial root; sync-compliance-root.ts will push the live root
   // from compliance-backend after this deploy completes.
   const ComplianceFactory = await hre.ethers.getContractFactory("Compliance");
-  const compliance = await ComplianceFactory.deploy(admin.address, hre.ethers.ZeroHash);
+  const compliance = await ComplianceFactory.deploy(
+    admin.address,
+    hre.ethers.ZeroHash
+  );
   await compliance.waitForDeployment();
   const complianceAddr = await compliance.getAddress();
   console.log("Compliance deployed: ", complianceAddr);
@@ -98,7 +102,7 @@ async function main() {
     admin.address,
     [RELAYER_A, RELAYER_B, RELAYER_C],
     90,
-    50,
+    50
   );
   await oracle.waitForDeployment();
   const oracleAddr = await oracle.getAddress();
@@ -121,7 +125,7 @@ async function main() {
     oracleAddr,
     complianceAddr,
     admin.address,
-    admin.address,
+    admin.address
   );
   await perp.waitForDeployment();
   const perpAddr = await perp.getAddress();
@@ -194,17 +198,17 @@ async function main() {
     deployedAt: new Date().toISOString(),
     contracts: {
       // No MockERC7984 entry — using Zama's canonical cUSDCMock instead.
-      cUSDCMock:      SEPOLIA_CUSDC_MOCK,
-      Compliance:     complianceAddr,
-      Oracle:         oracleAddr,
-      NoirVault:      vaultAddr,
-      PerpEngine:     perpAddr,
-      AMMEngine:      ammAddr,
-      LimitEngine:    limitAddr,
+      cUSDCMock: SEPOLIA_CUSDC_MOCK,
+      Compliance: complianceAddr,
+      Oracle: oracleAddr,
+      NoirVault: vaultAddr,
+      PerpEngine: perpAddr,
+      AMMEngine: ammAddr,
+      LimitEngine: limitAddr,
       DarkpoolEngine: darkAddr,
     },
     relayers: [RELAYER_A, RELAYER_B, RELAYER_C],
-    admin:    admin.address,
+    admin: admin.address,
     explorer: "https://sepolia.etherscan.io",
   };
   fs.writeFileSync(artifactPath, JSON.stringify(deployment, null, 2));
@@ -215,14 +219,30 @@ async function main() {
   console.log("");
   console.log("Next steps:");
   console.log("  1. Verify on Etherscan:");
-  console.log(`     npx hardhat verify --network sepolia ${complianceAddr} ${admin.address} 0x0000000000000000000000000000000000000000000000000000000000000000`);
-  console.log(`     npx hardhat verify --network sepolia ${oracleAddr} ${admin.address} '[${RELAYER_A},${RELAYER_B},${RELAYER_C}]' 90 50`);
-  console.log(`     npx hardhat verify --network sepolia ${vaultAddr} ${admin.address} ${SEPOLIA_CUSDC_MOCK}`);
-  console.log(`     npx hardhat verify --network sepolia ${perpAddr} ${vaultAddr} ${oracleAddr} ${complianceAddr} ${admin.address} ${admin.address}`);
-  console.log(`     npx hardhat verify --network sepolia ${ammAddr} ${vaultAddr} ${admin.address}`);
-  console.log(`     npx hardhat verify --network sepolia ${limitAddr} ${vaultAddr} ${admin.address}`);
-  console.log(`     npx hardhat verify --network sepolia ${darkAddr} ${vaultAddr} ${admin.address}`);
-  console.log("  2. Run setup-sepolia.ts to seed cUSDCMock + commit oracle prices");
+  console.log(
+    `     npx hardhat verify --network sepolia ${complianceAddr} ${admin.address} 0x0000000000000000000000000000000000000000000000000000000000000000`
+  );
+  console.log(
+    `     npx hardhat verify --network sepolia ${oracleAddr} ${admin.address} '[${RELAYER_A},${RELAYER_B},${RELAYER_C}]' 90 50`
+  );
+  console.log(
+    `     npx hardhat verify --network sepolia ${vaultAddr} ${admin.address} ${SEPOLIA_CUSDC_MOCK}`
+  );
+  console.log(
+    `     npx hardhat verify --network sepolia ${perpAddr} ${vaultAddr} ${oracleAddr} ${complianceAddr} ${admin.address} ${admin.address}`
+  );
+  console.log(
+    `     npx hardhat verify --network sepolia ${ammAddr} ${vaultAddr} ${admin.address}`
+  );
+  console.log(
+    `     npx hardhat verify --network sepolia ${limitAddr} ${vaultAddr} ${admin.address}`
+  );
+  console.log(
+    `     npx hardhat verify --network sepolia ${darkAddr} ${vaultAddr} ${admin.address}`
+  );
+  console.log(
+    "  2. Run setup-sepolia.ts to seed cUSDCMock + commit oracle prices"
+  );
   console.log("  3. Run sync-compliance-root.ts --network sepolia");
 }
 

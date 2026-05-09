@@ -1,0 +1,11 @@
+{
+  "name": "noirperp",
+  "private": true,
+  "scripts": {
+    "install:all": "npm i --prefix bot && npm i --prefix compliance-backend && npm i --prefix oracle-relayer && npm i --prefix frontend",
+    "dev": "concurrently --names \"bot,compliance,oracle,frontend\" --prefix-colors \"cyan,green,yellow,magenta\" \"npm run dev --prefix bot\" \"npm run dev --prefix compliance-backend\" \"npm run dev --prefix oracle-relayer\" \"npm run dev --prefix frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "9.1.2"
+  }
+}

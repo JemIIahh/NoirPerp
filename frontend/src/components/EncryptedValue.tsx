@@ -59,9 +59,27 @@ export function EncryptedValue({
           if (!address || !walletClient) return;
           setBusy(true); setErr(null);
           try {
-            const inst = await getRelayerInstance(deployment);
-            const v = await (inst as any).userDecrypt(handle, contractAddr, walletClient);
-            setValue(BigInt(v));
+            const inst = await getRelayerInstance(deployment) as any;
+            // SDK 0.4.1 userDecrypt flow: generateKeypair → getExtraData → createEIP712 → sign → userDecrypt
+            const { privateKey, publicKey } = inst.generateKeypair();
+            const extraData = await inst.getExtraData();
+            const startTimestamp = Math.floor(Date.now() / 1000);
+            const durationDays = 1;
+            const eip712 = inst.createEIP712(publicKey, [contractAddr], startTimestamp, durationDays, extraData);
+            const signature = await walletClient.signTypedData({
+              domain: eip712.domain,
+              types: eip712.types,
+              primaryType: eip712.primaryType,
+              message: eip712.message,
+            });
+            const result = await inst.userDecrypt(
+              [{ handle, contractAddress: contractAddr }],
+              privateKey, publicKey, signature,
+              [contractAddr], address!,
+              startTimestamp, durationDays, extraData,
+            );
+            const v = Object.values(result)[0] as bigint;
+            setValue(v);
           } catch (e2) {
             setErr((e2 as Error).message);
           } finally {
