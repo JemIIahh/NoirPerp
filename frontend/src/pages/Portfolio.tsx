@@ -11,10 +11,9 @@ import { Card, SectionHeader, Badge, EmptyState, StatStripCell } from "../compon
 import { useDeployment } from "../hooks/useDeployment";
 import { useVaultBalance } from "../hooks/useEncryptedBalance";
 import { usePositions } from "../hooks/usePositions";
-import { ERC7984_ABI, AMM_ABI } from "../lib/abis";
+import { AMM_ABI } from "../lib/abis";
 import { marketById } from "../lib/markets";
 import { shortAddr } from "../lib/format";
-import { getUsdcxToken } from "../lib/types";
 
 export default function Portfolio() { return <WalletGate><Inner /></WalletGate>; }
 
@@ -24,24 +23,15 @@ function Inner() {
   const { data: vaultBalanceHandle } = useVaultBalance(address);
   const positions = usePositions(address);
 
-  // USDCx address: Sepolia = Zama's cUSDCMock; local = our MockERC7984.
-  // Both are ERC-7984 confidential tokens; balanceOf returns a euint64 handle.
-  const usdcxAddr = getUsdcxToken(deployment);
-
   // Native ETH balance (Sepolia / Hardhat ETH for gas) — plaintext, not encrypted.
   const { data: ethBalance } = useBalance({
     address,
     query: { enabled: !!address },
   });
 
-  const { data: tokenBalance } = useReadContract({
-    address: usdcxAddr, abi: parseAbi(ERC7984_ABI),
-    functionName: "balanceOf", args: address ? [address] : undefined,
-    query: { enabled: !!address && !!usdcxAddr },
-  });
   const { data: lpShares } = useReadContract({
     address: deployment?.contracts.AMMEngine, abi: parseAbi(AMM_ABI),
-    functionName: "userShares", args: address ? [address] : undefined,
+    functionName: "getUserShares", args: address ? [address] : undefined,
     query: { enabled: !!address && !!deployment },
   });
 
@@ -73,16 +63,15 @@ function Inner() {
           hint={`Native ${deployment?.network === "sepolia" ? "Sepolia ETH" : "Hardhat ETH"} · plaintext`}
         />
         <StatStripCell
-          label={`Wallet · ${deployment?.network === "sepolia" ? "cUSDCMock" : "USDCx"}`}
+          label="Open positions"
           accent="mint"
-          icon={<Wallet size={13} />}
+          icon={<TrendingUp size={13} />}
           value={
-            <EncryptedValue
-              handle={tokenBalance as `0x${string}` | undefined}
-              contractAddr={usdcxAddr}
-            />
+            <span className="font-mono tabular-nums text-noir-cream">
+              {positions.length}
+            </span>
           }
-          hint="ERC-7984 confidential token"
+          hint="Active encrypted positions"
         />
         <StatStripCell
           label="Vault balance"
