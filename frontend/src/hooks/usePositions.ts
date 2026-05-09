@@ -21,13 +21,13 @@ const GET_POSITION_ABI: Abi = [
         name: "",
         type: "tuple",
         components: [
-          { name: "owner",      type: "address" },
-          { name: "marketId",   type: "uint8"   },
-          { name: "isLong",     type: "bool"    },
-          { name: "active",     type: "bool"    },
           { name: "size",       type: "bytes32" },
           { name: "entryPrice", type: "bytes32" },
           { name: "collateral", type: "bytes32" },
+          { name: "isLong",     type: "bool"    },
+          { name: "marketId",   type: "uint8"   },
+          { name: "owner",      type: "address" },
+          { name: "active",     type: "bool"    },
         ],
       },
     ],
@@ -60,13 +60,13 @@ export function usePositions(owner: `0x${string}` | undefined, limit = 50) {
     if (!p) return [];
     // viem decodes named tuple components as an object with named keys.
     // Fall back to indexed access if .owner is missing (parseAbi edge case).
-    const posOwner: string = p.owner ?? p[0];
-    const marketId: number = p.marketId !== undefined ? Number(p.marketId) : Number(p[1]);
-    const isLong: boolean = p.isLong !== undefined ? p.isLong : p[2];
-    const active: boolean = p.active !== undefined ? p.active : p[3];
-    const size: `0x${string}` = p.size ?? p[4];
-    const entryPrice: `0x${string}` = p.entryPrice ?? p[5];
-    const collateral: `0x${string}` = p.collateral ?? p[6];
+    const posOwner: string = p.owner ?? p[5];
+    const marketId: number = p.marketId !== undefined ? Number(p.marketId) : Number(p[4]);
+    const isLong: boolean = p.isLong !== undefined ? p.isLong : p[3];
+    const active: boolean = p.active !== undefined ? p.active : p[6];
+    const size: `0x${string}` = p.size ?? p[0];
+    const entryPrice: `0x${string}` = p.entryPrice ?? p[1];
+    const collateral: `0x${string}` = p.collateral ?? p[2];
 
     if (!posOwner || posOwner.toLowerCase() !== owner.toLowerCase()) return [];
     if (!active) return [];

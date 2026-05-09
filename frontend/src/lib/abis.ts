@@ -55,7 +55,7 @@ export const PERP_ABI = [
 export const AMM_ABI = [
   "function totalShares() view returns (uint64)",
   "function totalReserveUsdcx() view returns (uint64)",
-  "function userShares(address) view returns (bytes32)",
+  "function getUserShares(address) view returns (bytes32)",
   "function addLiquidity(uint64 amount) external",
   "function requestWithdraw(uint64 shares) external returns (uint256 requestId)",
 ] as const;

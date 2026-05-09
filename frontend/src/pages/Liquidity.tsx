@@ -35,7 +35,7 @@ function Inner() {
     query: { enabled: !!ammAddr, refetchInterval: 15_000 },
   });
   const { data: userShares } = useReadContract({
-    address: ammAddr, abi: AMM, functionName: "userShares",
+    address: ammAddr, abi: AMM, functionName: "getUserShares",
     args: address ? [address] : undefined,
     query: { enabled: !!ammAddr && !!address, refetchInterval: 15_000 },
   });
